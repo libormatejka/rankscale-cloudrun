@@ -18,6 +18,7 @@ Scheduleru**.
 | Cesta | Účel |
 |---|---|
 | `README.md` | tento návod |
+| `Makefile` | zkratky pro lint/build/deploy příkazy z tohoto návodu (`make help` vypíše cíle) |
 | `pyproject.toml` | konfigurace `ruff` (linter) |
 | `requirements-dev.txt` | vývojářské závislosti (jen `ruff`, do image se nekopírují) |
 | `doc/SECURITY_CHECKLIST.md` | bezpečnostní review nasazení, otevřené položky k řešení |
@@ -30,6 +31,11 @@ Scheduleru**.
 
 `src/` je vše, co se nasazuje do GCP (image + jeho build inputy). `doc/` jsou
 podpůrné dokumenty, které se nikam nenasazují.
+
+Většina příkazů z tohoto návodu má zkratku v [`Makefile`](Makefile) —
+`make help` vypíše dostupné cíle. `deploy-*`/`execute`/`backfill` cíle
+potřebují nastavené `$GCP_PROJECT`/`$REGION`/`$REPO` stejně jako `gcloud`
+příkazy níže (krok 1).
 
 ---
 
@@ -210,6 +216,8 @@ gcloud builds submit src --project=$GCP_PROJECT \
   --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest"
 ```
 
+Zkratka: `make deploy-build`.
+
 ## 5. Vytvoření Cloud Run Job
 
 Cílový projekt a dataset (`GCP_PROJECT`, `BQ_DATASET`), které uvidí samotný
@@ -248,6 +256,8 @@ gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
 gcloud run jobs execute rankscale-extract --project=$GCP_PROJECT --region=$REGION
 ```
 
+Zkratka: `make execute`.
+
 ### Backfill
 
 Jednorázově přepíše env proměnnou jen pro tento konkrétní run:
@@ -256,6 +266,8 @@ Jednorázově přepíše env proměnnou jen pro tento konkrétní run:
 gcloud run jobs execute rankscale-extract --project=$GCP_PROJECT --region=$REGION \
   --update-env-vars="BACKFILL_WEEKS=52"
 ```
+
+Zkratka: `make backfill` (výchozí `WEEKS=52`, jinak `make backfill WEEKS=10`).
 
 ## 6. Denní spouštění přes Cloud Scheduler
 
@@ -298,6 +310,8 @@ gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
   --image="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest" \
   --region=$REGION
 ```
+
+Zkratka pro oba příkazy najednou: `make deploy`.
 
 ## 8. E-mailová notifikace při selhání
 
@@ -396,6 +410,7 @@ Kód se kontroluje přes [`ruff`](https://docs.astral.sh/ruff/) (konfigurace v
 ```bash
 pip install -r requirements-dev.txt
 ruff check .
+# nebo: make lint
 ```
 
 Jen `check` (chyby, nepoužité importy, apod.) — `ruff format` se záměrně
@@ -414,6 +429,8 @@ docker run --rm \
   -v ~/.config/gcloud:/root/.config/gcloud:ro \
   rankscale-extract-local
 ```
+
+Zkratka (stejné proměnné, ale čtené ze shellu): `RANKSCALE_API_KEY=rk_tvuj_klic GCP_PROJECT=rankscale BQ_DATASET=RankScaleDashboard make run`.
 
 (Mount `~/.config/gcloud` funguje jen pokud máš lokálně `gcloud auth application-default login`
 a image běží jako root — pro rychlý lokální test stačí, pro produkci se auth řeší
