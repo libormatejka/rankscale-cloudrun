@@ -109,3 +109,9 @@ mirror table. Schema changes go in `src/schema_raw.sql` (all `CREATE TABLE IF NO
 EXISTS`, safe to re-run against a live dataset) and must stay project-ID-agnostic —
 the project is supplied externally via `bq query --project_id=...`, not hardcoded
 in the SQL.
+
+## Behavioral rules
+
+- Before committing, run `make lint` and make sure it passes.
+- Never modify `src/schema_raw.sql` without `CREATE TABLE IF NOT EXISTS` — it must
+  stay safe to re-run against a live dataset (see README step 3b).
