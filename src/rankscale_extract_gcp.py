@@ -25,7 +25,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 import requests
 from google.cloud import bigquery
@@ -38,7 +38,7 @@ BQ_DATASET     = os.environ["BQ_DATASET"]
 BACKFILL_WEEKS = int(os.environ["BACKFILL_WEEKS"]) if os.environ.get("BACKFILL_WEEKS") else None
 RATE_SLEEP     = 0.5
 
-NOW    = datetime.now(timezone.utc).isoformat()
+NOW    = datetime.now(UTC).isoformat()
 RUN_ID = str(uuid.uuid4())
 
 # Souhrnná statistika běhu pro etl_runs (viz log_run) — bq_append do ní
@@ -118,7 +118,7 @@ def log_run(
     row = {
         "run_id":         RUN_ID,
         "started_at":     started_at,
-        "finished_at":    datetime.now(timezone.utc).isoformat(),
+        "finished_at":    datetime.now(UTC).isoformat(),
         "mode":           "backfill" if BACKFILL_WEEKS else "daily",
         "status":         status,
         "brands_total":   brands_total,
@@ -257,7 +257,7 @@ def _fetch_snapshots(brand_id: str, iso_start: str, iso_end: str) -> tuple[list[
             "last_snapshot_at": snap,
         }
 
-        def make_row(b: dict, is_own: bool) -> dict:
+        def make_row(b: dict, is_own: bool, base: dict = base) -> dict:
             return {
                 **base,
                 "brand_name":       b.get("name"),
@@ -430,9 +430,9 @@ def main() -> None:
         )
 
         if failed_brands:
-            log.error(f"╔══════════════════════════════════════════╗")
+            log.error("╔══════════════════════════════════════════╗")
             log.error(f"║  Dokončeno s chybami — selhalo {len(failed_brands)}/{len(brand_ids)} brandů")
-            log.error(f"╚══════════════════════════════════════════╝")
+            log.error("╚══════════════════════════════════════════╝")
             # Nenulový exit kód → Cloud Run Job execution se označí jako Failed
             # a je vidět v Cloud Monitoring / notifikacích.
             sys.exit(1)

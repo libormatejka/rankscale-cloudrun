@@ -18,6 +18,8 @@ Scheduleru**.
 | Cesta | Účel |
 |---|---|
 | `README.md` | tento návod |
+| `pyproject.toml` | konfigurace `ruff` (linter) |
+| `requirements-dev.txt` | vývojářské závislosti (jen `ruff`, do image se nekopírují) |
 | `doc/SECURITY_CHECKLIST.md` | bezpečnostní review nasazení, otevřené položky k řešení |
 | `src/rankscale_extract_gcp.py` | samotný extract skript |
 | `src/Dockerfile` | image pro Cloud Run Job |
@@ -385,6 +387,20 @@ run logu výše — sloupec `error_message`).
 | `404 Not found: Dataset ...` nebo `Table ... not found` | Dataset/tabulky v cílovém projektu ještě nevznikly | krok 3b — `bq mk` + `bq query < src/schema_raw.sql` |
 | `bq: command not found` / `xxd: command not found` | Cloud Shell nemá `xxd` předinstalované | Použij `od -c` místo `xxd` |
 | Prázdný výstup `echo $GCP_PROJECT ...` | `export` proměnné platí jen v aktuální session/kartě terminálu | Spusť `export` řádky z kroku 1 znovu |
+
+## Lint
+
+Kód se kontroluje přes [`ruff`](https://docs.astral.sh/ruff/) (konfigurace v
+[`pyproject.toml`](pyproject.toml)):
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .
+```
+
+Jen `check` (chyby, nepoužité importy, apod.) — `ruff format` se záměrně
+nepoužívá, přepsal by ručně zarovnané klíče/`=` v `src/rankscale_extract_gcp.py`
+do jiného stylu.
 
 ## Lokální test image
 

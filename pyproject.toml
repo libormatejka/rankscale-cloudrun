@@ -1,0 +1,13 @@
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # import sorting
+    "UP",  # pyupgrade
+    "B",   # bugbear (common bug patterns)
+]
