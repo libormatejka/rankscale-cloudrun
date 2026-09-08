@@ -4,24 +4,12 @@ Denní pipeline, která tahá data z Rankscale Metrics API a ukládá je 1:1 do
 BigQuery (`raw_*` tabulky). Běží jako **Cloud Run Job** spouštěný z **Cloud
 Scheduleru**.
 
-Vznikla jako GCP varianta paralelní pipeline, která běží přes GitHub Actions
-v jiném repozitáři (`rankscaleDashboard`) — stejná extract logika
-(`rankscale_extract.py`), jen jiná autentizace a spouštěč. Tenhle repozitář
-je samostatný a nezávislý, žádné soubory odsud nejsou sdílené s tím druhým.
-
----
-
-## Proč jiná autentizace než GitHub Actions verze
-
-| | GitHub Actions varianta | Cloud Run Job (tento repozitář) |
-|---|---|---|
-| **BigQuery auth** | JSON klíč service accountu ze secretu `GCP_SA_JSON` | Application Default Credentials — service account je přiřazený přímo k jobu, žádný klíč se nikam nekopíruje |
-| **Rankscale API klíč** | GitHub Secret `RANKSCALE_API_KEY` | GCP Secret Manager, namountovaný jako env proměnná |
-| **Chybové chování** | log chyby, pokračuje dál | log chyby, na konci `sys.exit(1)` pokud selhal alespoň jeden brand → Cloud Run execution se označí jako **Failed** |
-| **Spouštěč** | `schedule:` v `.yml` workflow | Cloud Scheduler → HTTP trigger na Cloud Run Jobs API |
-
-Business logika (endpoints, transformace řádků, BQ append, skip-if-no-new-data)
-je stejná jako v GitHub Actions variantě.
+- **Autentizace k BigQuery**: Application Default Credentials — service
+  account je přiřazený přímo k jobu, žádný klíč se nikam nekopíruje.
+- **Rankscale API klíč**: GCP Secret Manager, namountovaný jako env proměnná.
+- **Chybové chování**: neúspěšný brand se loguje, extract pokračuje na dalších;
+  pokud selhal alespoň jeden, celý job skončí s `sys.exit(1)` → Cloud Run
+  execution se označí jako **Failed**.
 
 ---
 
@@ -43,21 +31,16 @@ podpůrné dokumenty, které se nikam nenasazují.
 
 ---
 
-## Zlaté pravidlo: VŠECHNO se stejným `--project`
+## Než začneš: vždy stejný `--project`
 
-Celý první pokus o nasazení se zkomplikoval tím, že část příkazů spoléhala na
-"aktivní projekt" nastavený přes `gcloud config set project`, a ten se v Cloud
-Shellu mezi kartami/sessions nenápadně měnil. Výsledek: service account vznikl
-v jiném projektu než Cloud Run Job, secret v jiném projektu než job, který ho
-potřeboval číst, atd. — samá 401/403 chyba bez zjevné příčiny.
-
-**Proto má od teď každý příkaz v tomto návodu explicitní `--project=$GCP_PROJECT`
-(nebo `--project_id=$GCP_PROJECT` u `bq`), i když by teoreticky fungoval i bez
-něj.** Nespoléhej na ambientní `gcloud config` — je to nejčastější zdroj potíží
-při přesunu na jiný projekt.
+Každý příkaz v tomto návodu má explicitní `--project=$GCP_PROJECT` (nebo
+`--project_id=$GCP_PROJECT` u `bq`), i když by teoreticky fungoval i bez něj —
+nespoléhej na ambientní `gcloud config set project`, ať si jsi jistý, že
+service account, secret, Cloud Run Job i Scheduler vznikají ve stejném
+projektu.
 
 Shell proměnné (`$GCP_PROJECT`, `$REGION`, `$REPO`, `$SA_NAME`) z kroku 1 platí
-jen v aktuální kartě/session Cloud Shellu. Než spustíš cokoliv z návodu, ověř:
+jen v aktuální session terminálu. Než spustíš cokoliv z návodu, ověř:
 
 ```bash
 echo $GCP_PROJECT $REGION $REPO $SA_NAME
@@ -84,8 +67,7 @@ předá přes `--env-vars-file=src/env.yaml`.
 ## 1. Příprava GCP projektu
 
 Projekt musí mít zapnuté **billing** — bez něj nejdou zapnout Artifact Registry
-ani Cloud Build (BigQuery v malém rozsahu běží i bez billingu v sandbox režimu,
-což první pokus na chvíli zamaskoval). Ověř/přiřaď:
+ani Cloud Build. Ověř/přiřaď:
 
 ```bash
 gcloud billing accounts list
@@ -133,13 +115,7 @@ gcloud projects add-iam-policy-binding $GCP_PROJECT \
 
 ## 2. Service account pro job
 
-Samostatný SA jen pro tento job, **založený přímo v `$GCP_PROJECT`** — ne v
-projektu, kde zrovna běžíš `gcloud` z předchozí session. SA z jiného projektu
-sice jde IAM oprávnit napříč projekty, ale Cloud Run Job i Cloud Scheduler pak
-při vytváření/aktualizaci vyžadují `iam.serviceAccounts.actAs` přes hranici
-projektů, což typicky selže s `PERMISSION_DENIED` i pro vlastníka projektu
-(cross-project `actAs` bývá navíc blokované organizační politikou). Proto SA
-i všechny navazující resources drž ve stejném `$GCP_PROJECT`.
+Samostatný SA jen pro tento job, založený přímo v `$GCP_PROJECT`.
 
 ```bash
 gcloud iam service-accounts create $SA_NAME \
@@ -188,10 +164,9 @@ Ověř, že se uložil správně:
 gcloud secrets versions access latest --secret=rankscale-api-key --project=$GCP_PROJECT
 ```
 
-Musí vypsat tvůj skutečný klíč. Pokud jsi secret omylem vytvořil s `echo` místo
-`printf` (přidá na konec znak nového řádku, který Rankscale API odmítne jako
-neplatný token — projeví se jako `401 Unauthorized` v logu jobu), oprav to
-novou verzí:
+Musí vypsat tvůj skutečný klíč. Použij vždy `printf`, ne `echo` — `echo` přidá
+na konec znak nového řádku, který Rankscale API odmítne jako neplatný token
+(`401 Unauthorized`). Oprava přes novou verzi:
 
 ```bash
 gcloud secrets versions add rankscale-api-key --project=$GCP_PROJECT \
@@ -200,13 +175,8 @@ gcloud secrets versions add rankscale-api-key --project=$GCP_PROJECT \
 
 ## 3b. BigQuery dataset a tabulky
 
-**Bez tohoto kroku job nemá kam zapisovat — spustí se, ale spadne na zápisu do
-BigQuery** (chyba typu `404 Not found: Dataset` nebo `Table not found`).
-
-Skript (`bq_append`) očekává, že dataset a tabulky `raw_*` už existují — sám je
-nezakládá. Tenhle GCP projekt je oddělený od paralelní GitHub Actions pipeline
-v jiném repozitáři, takže potřebuje **vlastní** dataset a tabulky ve stejném
-`$GCP_PROJECT`, kam píše i `src/env.yaml`:
+Skript (`bq_append`) očekává, že dataset a tabulky `raw_*` už existují — sám
+je nezakládá:
 
 ```bash
 bq --project_id=$GCP_PROJECT mk --dataset --location=EU ${GCP_PROJECT}:RankScaleDashboard
@@ -218,8 +188,8 @@ bq query --project_id=$GCP_PROJECT --use_legacy_sql=false < src/schema_raw.sql
 určí, do kterého projektu se tabulky založí, takže při přesunu na jiný projekt
 stačí mít správně nastavené `$GCP_PROJECT` a soubor spustit beze změny.
 
-Pokud dataset už existuje (např. z předchozího pokusu), `bq mk` ohlásí
-`Dataset already exists` — to je neškodné, pokračuj rovnou na `bq query`.
+Pokud dataset už existuje, `bq mk` ohlásí `Dataset already exists` — to je
+neškodné, pokračuj rovnou na `bq query`.
 
 ## 4. Build image a push do Artifact Registry
 
@@ -283,9 +253,7 @@ gcloud run jobs execute rankscale-extract --project=$GCP_PROJECT --region=$REGIO
 
 ## 6. Denní spouštění přes Cloud Scheduler
 
-Scheduler job zakládej **ve stejném `$GCP_PROJECT`** jako Cloud Run Job a SA —
-scheduler v jiném projektu, který cílí na job/SA v tomhle, narazí na stejný
-cross-project `actAs` problém jako v kroku 2.
+Scheduler job zakládej ve stejném `$GCP_PROJECT` jako Cloud Run Job a SA.
 
 ```bash
 gcloud scheduler jobs create http rankscale-extract-daily \
@@ -299,9 +267,6 @@ gcloud scheduler jobs create http rankscale-extract-daily \
 ```
 
 (`roles/run.invoker` pro tenhle SA je už přidaný z kroku 2.)
-
-Stejný čas jako GitHub Actions workflow (6:30 UTC) — pokud běží oba, spusť
-jen jeden z nich, jinak se data budou appendovat 2×.
 
 Otestuj rovnou ostrým triggerem (ne jen `gcloud run jobs execute`, ať víš, že
 zítřejší automatický běh přes Scheduler projde):
@@ -339,20 +304,19 @@ gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
   pokud selhal **alespoň jeden**, celý job skončí s `exit(1)` → execution je označená **Failed**
   a lze na to navázat alert v Cloud Monitoringu (`Cloud Run Job Execution Failed`).
 
-## Troubleshooting — reálné chyby, na které lze narazit
+## Troubleshooting
 
 | Chyba | Příčina | Oprava |
 |---|---|---|
-| `requests.exceptions.HTTPError: 401 ... rankscale.ai/v1/metrics/brands` | V Secret Manageru je placeholder `rk_tvuj_klic`, nebo klíč s nadbytečným `\n` z `echo` | `gcloud secrets versions access latest --secret=rankscale-api-key --project=$GCP_PROJECT` — over hodnotu; oprav přes `gcloud secrets versions add ...` (krok 3) |
+| `requests.exceptions.HTTPError: 401 ... rankscale.ai/v1/metrics/brands` | V Secret Manageru je placeholder klíč, nebo klíč s nadbytečným `\n` z `echo` | `gcloud secrets versions access latest --secret=rankscale-api-key --project=$GCP_PROJECT` — over hodnotu; oprav přes `gcloud secrets versions add ...` (krok 3) |
 | `FAILED_PRECONDITION: Billing account for project '...' is not found` | Projekt nemá připojený billing účet | `gcloud billing projects link $GCP_PROJECT --billing-account=...` (krok 1) |
 | `gcloud builds submit`: `AccessDeniedException: ... does not have storage.objects.get access` | U nových projektů (2024+) chybí výchozímu Compute SA role potřebná pro Cloud Build bucket | Grantni `roles/cloudbuild.builds.builder` compute SA (krok 1, sekce "Cloud Build oprávnění") |
-| `gcloud run jobs create`: `Permission 'iam.serviceaccounts.actAs' denied` | SA a Cloud Run Job/Scheduler jsou v **různých** projektech — cross-project `actAs` selže i pro vlastníka projektu | Založ SA přímo v `$GCP_PROJECT`, kde vytváříš job/scheduler (krok 2) — nepoužívej SA z jiného projektu |
+| `gcloud run jobs create`: `Permission 'iam.serviceaccounts.actAs' denied` | SA a Cloud Run Job/Scheduler jsou v různých projektech | Založ SA přímo v `$GCP_PROJECT`, kde vytváříš job/scheduler (krok 2) |
 | `google.api_core.exceptions.Forbidden: 403 ... User does not have bigquery.jobs.create permission` | Service account byl založený/oprávněný v jiném projektu, než do kterého `src/env.yaml` píše | `gcloud iam service-accounts describe "${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --project=$GCP_PROJECT` ověří, kde SA vznikl |
-| Scheduler log `PERMISSION_DENIED` / `403` bez detailu, žádná nová execution | Cloud Run Job, na který Scheduler cílí (`namespaces/$GCP_PROJECT`), ve skutečnosti neexistuje v tom projektu (vznikl jinde) | `gcloud run jobs describe rankscale-extract --project=$GCP_PROJECT --region=$REGION` ověří, jestli job v cílovém projektu vůbec je |
+| Scheduler log `PERMISSION_DENIED` / `403` bez detailu, žádná nová execution | Cloud Run Job, na který Scheduler cílí, ve skutečnosti neexistuje v tom projektu | `gcloud run jobs describe rankscale-extract --project=$GCP_PROJECT --region=$REGION` ověří, jestli job v cílovém projektu vůbec je |
 | `404 Not found: Dataset ...` nebo `Table ... not found` | Dataset/tabulky v cílovém projektu ještě nevznikly | krok 3b — `bq mk` + `bq query < src/schema_raw.sql` |
-| `-bash: --env-vars-file=env.yaml: command not found` | Víceřádkový příkaz se zalomením `\` se při kopírování rozdělil na samostatné řádky | Vlož celý příkaz najednou jako blok, nebo použij jednořádkovou verzi bez `\` |
 | `bq: command not found` / `xxd: command not found` | Cloud Shell nemá `xxd` předinstalované | Použij `od -c` místo `xxd` |
-| Prázdný výstup `echo $GCP_PROJECT ...` | `export` proměnné platí jen v aktuální session/kartě Cloud Shellu | Spusť `export` řádky z kroku 1 znovu v aktuálním terminálu |
+| Prázdný výstup `echo $GCP_PROJECT ...` | `export` proměnné platí jen v aktuální session/kartě terminálu | Spusť `export` řádky z kroku 1 znovu |
 
 ## Lokální test image
 
