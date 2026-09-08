@@ -25,16 +25,21 @@ je stejná jako v GitHub Actions variantě.
 
 ---
 
-## Obsah složky
+## Obsah repozitáře
 
-| Soubor | Účel |
+| Cesta | Účel |
 |---|---|
-| `rankscale_extract_gcp.py` | samotný extract skript |
-| `Dockerfile` | image pro Cloud Run Job |
-| `.dockerignore` | vynechá README z buildu |
-| `requirements.txt` | Python závislosti (subset — bez `google-auth`, ten už táhne `google-cloud-bigquery`) |
-| `env.yaml` | cílový `GCP_PROJECT` + `BQ_DATASET` pro Cloud Run Job (viz krok 5) |
-| `schema_raw.sql` | DDL pro `raw_*` tabulky, bez natvrdo zapsaného project ID (viz krok 3b) |
+| `README.md` | tento návod |
+| `doc/SECURITY_CHECKLIST.md` | bezpečnostní review nasazení, otevřené položky k řešení |
+| `src/rankscale_extract_gcp.py` | samotný extract skript |
+| `src/Dockerfile` | image pro Cloud Run Job |
+| `src/.dockerignore` | vynechá `env.yaml`/`schema_raw.sql` z Docker build kontextu (do image se stejně kopírují jen `requirements.txt` + skript) |
+| `src/requirements.txt` | Python závislosti (subset — bez `google-auth`, ten už táhne `google-cloud-bigquery`) |
+| `src/env.yaml` | cílový `GCP_PROJECT` + `BQ_DATASET` pro Cloud Run Job (viz krok 5) |
+| `src/schema_raw.sql` | DDL pro `raw_*` tabulky, bez natvrdo zapsaného project ID (viz krok 3b) |
+
+`src/` je vše, co se nasazuje do GCP (image + jeho build inputy). `doc/` jsou
+podpůrné dokumenty, které se nikam nenasazují.
 
 ---
 
@@ -62,7 +67,7 @@ Pokud je výstup prázdný, spusť `export` řádky z kroku 1 znovu.
 
 ### Kam nastavit cílový GCP projekt a BigQuery dataset pro samotný skript
 
-To určuje soubor [`env.yaml`](env.yaml) v této složce:
+To určuje soubor [`src/env.yaml`](src/env.yaml):
 
 ```yaml
 GCP_PROJECT: rankscale
@@ -70,9 +75,9 @@ BQ_DATASET: RankScaleDashboard
 ```
 
 Skript je čte jako `os.environ["GCP_PROJECT"]` / `os.environ["BQ_DATASET"]`
-(viz `rankscale_extract_gcp.py`, funkce `tbl()` — tabulky jsou
+(viz `src/rankscale_extract_gcp.py`, funkce `tbl()` — tabulky jsou
 `{GCP_PROJECT}.{BQ_DATASET}.raw_*`). Při vytváření jobu (krok 5) se soubor
-předá přes `--env-vars-file=env.yaml`.
+předá přes `--env-vars-file=src/env.yaml`.
 
 ---
 
@@ -201,15 +206,15 @@ BigQuery** (chyba typu `404 Not found: Dataset` nebo `Table not found`).
 Skript (`bq_append`) očekává, že dataset a tabulky `raw_*` už existují — sám je
 nezakládá. Tenhle GCP projekt je oddělený od paralelní GitHub Actions pipeline
 v jiném repozitáři, takže potřebuje **vlastní** dataset a tabulky ve stejném
-`$GCP_PROJECT`, kam píše i `env.yaml`:
+`$GCP_PROJECT`, kam píše i `src/env.yaml`:
 
 ```bash
 bq --project_id=$GCP_PROJECT mk --dataset --location=EU ${GCP_PROJECT}:RankScaleDashboard
 
-bq query --project_id=$GCP_PROJECT --use_legacy_sql=false < schema_raw.sql
+bq query --project_id=$GCP_PROJECT --use_legacy_sql=false < src/schema_raw.sql
 ```
 
-`schema_raw.sql` v této složce nemá project ID natvrdo zapsané — `--project_id`
+`src/schema_raw.sql` nemá project ID natvrdo zapsané — `--project_id`
 určí, do kterého projektu se tabulky založí, takže při přesunu na jiný projekt
 stačí mít správně nastavené `$GCP_PROJECT` a soubor spustit beze změny.
 
@@ -218,31 +223,29 @@ Pokud dataset už existuje (např. z předchozího pokusu), `bq mk` ohlásí
 
 ## 4. Build image a push do Artifact Registry
 
-Build se spouští **z kořene tohoto repozitáře**, aby `Dockerfile` a `COPY` cesty
-seděly:
+Build context je složka `src/` (tam je `Dockerfile` a vše, co `COPY` potřebuje),
+příkaz spouštěj z kořene repozitáře:
 
 ```bash
-cd rankscale-cloudrun
-
 gcloud artifacts repositories create $REPO \
   --repository-format=docker --location=$REGION --project=$GCP_PROJECT
 
-gcloud builds submit --project=$GCP_PROJECT \
+gcloud builds submit src --project=$GCP_PROJECT \
   --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest"
 ```
 
 ## 5. Vytvoření Cloud Run Job
 
 Cílový projekt a dataset (`GCP_PROJECT`, `BQ_DATASET`), které uvidí samotný
-skript, se **nepíšou do příkazu ručně** — jsou v [`env.yaml`](env.yaml)
-ve stejné složce, `--env-vars-file=env.yaml` je rovnou načte.
+skript, se **nepíšou do příkazu ručně** — jsou v [`src/env.yaml`](src/env.yaml),
+`--env-vars-file=src/env.yaml` je rovnou načte.
 
 ```bash
 gcloud run jobs create rankscale-extract --project=$GCP_PROJECT \
   --image="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest" \
   --region=$REGION \
   --service-account="${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
-  --env-vars-file=env.yaml \
+  --env-vars-file=src/env.yaml \
   --set-secrets="RANKSCALE_API_KEY=rankscale-api-key:latest" \
   --max-retries=1 \
   --task-timeout=1200
@@ -252,15 +255,15 @@ Proměnné:
 
 | Proměnná | Kde se nastavuje |
 |---|---|
-| `GCP_PROJECT`, `BQ_DATASET` | v souboru `env.yaml` (uprav a ulož) |
+| `GCP_PROJECT`, `BQ_DATASET` | v souboru `src/env.yaml` (uprav a ulož) |
 | `RANKSCALE_API_KEY` | Secret Manager, mountnutý přes `--set-secrets` (krok 3) |
 | `BACKFILL_WEEKS` | volitelné, jen pro backfill, viz níže — nastavuje se zvlášť při konkrétním spuštění |
 
-Když později změníš `env.yaml` (jiný dataset), aplikuješ to na existující job:
+Když později změníš `src/env.yaml` (jiný dataset), aplikuješ to na existující job:
 
 ```bash
 gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
-  --region=$REGION --env-vars-file=env.yaml
+  --region=$REGION --env-vars-file=src/env.yaml
 ```
 
 ### Ruční spuštění / test
@@ -317,9 +320,7 @@ Hledej execution s časem odpovídajícím spuštění scheduleru a `STATUS: Tru
 ## 7. Aktualizace image po změně kódu
 
 ```bash
-cd rankscale-cloudrun
-
-gcloud builds submit --project=$GCP_PROJECT \
+gcloud builds submit src --project=$GCP_PROJECT \
   --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest"
 
 gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
@@ -346,9 +347,9 @@ gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
 | `FAILED_PRECONDITION: Billing account for project '...' is not found` | Projekt nemá připojený billing účet | `gcloud billing projects link $GCP_PROJECT --billing-account=...` (krok 1) |
 | `gcloud builds submit`: `AccessDeniedException: ... does not have storage.objects.get access` | U nových projektů (2024+) chybí výchozímu Compute SA role potřebná pro Cloud Build bucket | Grantni `roles/cloudbuild.builds.builder` compute SA (krok 1, sekce "Cloud Build oprávnění") |
 | `gcloud run jobs create`: `Permission 'iam.serviceaccounts.actAs' denied` | SA a Cloud Run Job/Scheduler jsou v **různých** projektech — cross-project `actAs` selže i pro vlastníka projektu | Založ SA přímo v `$GCP_PROJECT`, kde vytváříš job/scheduler (krok 2) — nepoužívej SA z jiného projektu |
-| `google.api_core.exceptions.Forbidden: 403 ... User does not have bigquery.jobs.create permission` | Service account byl založený/oprávněný v jiném projektu, než do kterého `env.yaml` píše | `gcloud iam service-accounts describe "${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --project=$GCP_PROJECT` ověří, kde SA vznikl |
+| `google.api_core.exceptions.Forbidden: 403 ... User does not have bigquery.jobs.create permission` | Service account byl založený/oprávněný v jiném projektu, než do kterého `src/env.yaml` píše | `gcloud iam service-accounts describe "${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" --project=$GCP_PROJECT` ověří, kde SA vznikl |
 | Scheduler log `PERMISSION_DENIED` / `403` bez detailu, žádná nová execution | Cloud Run Job, na který Scheduler cílí (`namespaces/$GCP_PROJECT`), ve skutečnosti neexistuje v tom projektu (vznikl jinde) | `gcloud run jobs describe rankscale-extract --project=$GCP_PROJECT --region=$REGION` ověří, jestli job v cílovém projektu vůbec je |
-| `404 Not found: Dataset ...` nebo `Table ... not found` | Dataset/tabulky v cílovém projektu ještě nevznikly | krok 3b — `bq mk` + `bq query < schema_raw.sql` |
+| `404 Not found: Dataset ...` nebo `Table ... not found` | Dataset/tabulky v cílovém projektu ještě nevznikly | krok 3b — `bq mk` + `bq query < src/schema_raw.sql` |
 | `-bash: --env-vars-file=env.yaml: command not found` | Víceřádkový příkaz se zalomením `\` se při kopírování rozdělil na samostatné řádky | Vlož celý příkaz najednou jako blok, nebo použij jednořádkovou verzi bez `\` |
 | `bq: command not found` / `xxd: command not found` | Cloud Shell nemá `xxd` předinstalované | Použij `od -c` místo `xxd` |
 | Prázdný výstup `echo $GCP_PROJECT ...` | `export` proměnné platí jen v aktuální session/kartě Cloud Shellu | Spusť `export` řádky z kroku 1 znovu v aktuálním terminálu |
@@ -356,8 +357,7 @@ gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
 ## Lokální test image
 
 ```bash
-cd rankscale-cloudrun
-docker build -t rankscale-extract-local .
+docker build -t rankscale-extract-local src
 
 docker run --rm \
   -e RANKSCALE_API_KEY=rk_tvuj_klic \

@@ -11,14 +11,15 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 
 ## 🔴 Kritické
 
-- [x] **SQL injection v `bq_max_snapshot()`** — [rankscale_extract_gcp.py:83-89](rankscale_extract_gcp.py#L83-L89)
+- [x] **SQL injection v `bq_max_snapshot()`** — [../src/rankscale_extract_gcp.py:83-89](../src/rankscale_extract_gcp.py#L83-L89)
       `brand_id` jde f-stringem přímo do SQL dotazu bez parametrizace.
       Dnes pochází z Rankscale API (důvěryhodné), ale žádný security review
       tuhle domněnku neakceptuje.
       **Fix:** `bigquery.ScalarQueryParameter` + `QueryJobConfig(query_parameters=...)`.
-      Opraveno v `GCP/rankscale_extract_gcp.py` i v `src/rankscale_extract.py`
-      (stejný bug byl i v produkční GitHub Actions verzi). Nový image
-      nasazen a otestován (`rankscale-extract-q67hv`, `Completed: True`).
+      Opraveno v tomto repozitáři (`src/rankscale_extract_gcp.py`) i v
+      paralelní GitHub Actions pipeline (`rankscale_extract.py` v jiném
+      repozitáři, stejný bug byl i tam). Nový image nasazen a otestován
+      (`rankscale-extract-q67hv`, `Completed: True`).
 
 - [x] **Výchozí Compute service account má `roles/editor` na projektu `rankscale`**
       (`968813943604-compute@developer.gserviceaccount.com`). Tenhle SA reálně
