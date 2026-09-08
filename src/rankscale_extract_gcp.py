@@ -24,6 +24,7 @@ import logging
 import os
 import sys
 import time
+import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import requests
@@ -37,7 +38,12 @@ BQ_DATASET     = os.environ["BQ_DATASET"]
 BACKFILL_WEEKS = int(os.environ["BACKFILL_WEEKS"]) if os.environ.get("BACKFILL_WEEKS") else None
 RATE_SLEEP     = 0.5
 
-NOW = datetime.now(timezone.utc).isoformat()
+NOW    = datetime.now(timezone.utc).isoformat()
+RUN_ID = str(uuid.uuid4())
+
+# Souhrnná statistika běhu pro etl_runs (viz log_run) — bq_append do ní
+# přičítá počet zapsaných řádků napříč všemi tabulkami.
+run_stats = {"rows_written": 0}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,6 +81,7 @@ def bq_append(client: bigquery.Client, table: str, rows: list[dict]) -> None:
         table,
         job_config=cfg,
     ).result()
+    run_stats["rows_written"] += len(rows)
     log.info(f"    → {table.split('.')[-1]}: {len(rows)} řádků zapsáno")
 
 
@@ -93,6 +100,36 @@ def bq_max_snapshot(client: bigquery.Client, brand_id: str) -> datetime | None:
         return rows[0].max_snap if rows and rows[0].max_snap else None
     except Exception:
         return None
+
+
+def log_run(
+    client: bigquery.Client,
+    started_at: str,
+    status: str,
+    brands_total: int,
+    brands_failed: int,
+    error_message: str | None,
+) -> None:
+    """Zapíše jeden souhrnný řádek běhu do {GCP_PROJECT}.{BQ_DATASET}.etl_runs.
+
+    Chyba při zápisu logu se jen zaloguje, nesmí shodit jinak úspěšný run —
+    proto vlastní try/except (na rozdíl od ostatních bq_append volání).
+    """
+    row = {
+        "run_id":         RUN_ID,
+        "started_at":     started_at,
+        "finished_at":    datetime.now(timezone.utc).isoformat(),
+        "mode":           "backfill" if BACKFILL_WEEKS else "daily",
+        "status":         status,
+        "brands_total":   brands_total,
+        "brands_failed":  brands_failed,
+        "rows_written":   run_stats["rows_written"],
+        "error_message":  error_message,
+    }
+    try:
+        bq_append(client, f"{GCP_PROJECT}.{BQ_DATASET}.etl_runs", [row])
+    except Exception as e:
+        log.error(f"Nepodařilo se zapsat run log do etl_runs: {e}")
 
 
 # ── Týdenní date ranges ────────────────────────────────────────────────────────
@@ -348,46 +385,77 @@ def main() -> None:
     log.info(f"║  Rankscale Raw Extract (GCP)  [{mode}]")
     log.info("╚══════════════════════════════════════════╝")
 
-    client    = make_client()
-    brand_ids = extract_brands(client)
-    extract_search_terms(client, brand_ids)
+    started_at = NOW
+    client     = make_client()
+    brand_ids: list[str] = []
 
-    # Backfill: N týdnů zpět s explicitními date ranges (pondělí–neděle)
-    # Denní run: jen aktuální týden
-    is_backfill = bool(BACKFILL_WEEKS)
-    weeks = week_ranges(BACKFILL_WEEKS) if is_backfill else [current_week()]
+    try:
+        brand_ids = extract_brands(client)
+        extract_search_terms(client, brand_ids)
 
-    log.info(f"    Týdny ke stažení: {[w[0] for w in weeks]}")
+        # Backfill: N týdnů zpět s explicitními date ranges (pondělí–neděle)
+        # Denní run: jen aktuální týden
+        is_backfill = bool(BACKFILL_WEEKS)
+        weeks = week_ranges(BACKFILL_WEEKS) if is_backfill else [current_week()]
 
-    failed_brands = []
-    for brand_id in brand_ids:
-        log.info(f"━━ Brand: {brand_id}")
-        try:
-            for iso_start, iso_end in weeks:
-                extract_snapshots_and_texts(
-                    client, brand_id, iso_start, iso_end, force=is_backfill
-                )
+        log.info(f"    Týdny ke stažení: {[w[0] for w in weeks]}")
+
+        failed_brands = []
+        errors = []
+        for brand_id in brand_ids:
+            log.info(f"━━ Brand: {brand_id}")
+            try:
+                for iso_start, iso_end in weeks:
+                    extract_snapshots_and_texts(
+                        client, brand_id, iso_start, iso_end, force=is_backfill
+                    )
+                    time.sleep(RATE_SLEEP)
+
+                # Citations: vždy jen aktuální týden (API nepodporuje historický backfill)
+                extract_citations(client, brand_id)
                 time.sleep(RATE_SLEEP)
 
-            # Citations: vždy jen aktuální týden (API nepodporuje historický backfill)
-            extract_citations(client, brand_id)
-            time.sleep(RATE_SLEEP)
+            except Exception as e:
+                log.error(f"Brand {brand_id} selhal: {e}")
+                failed_brands.append(brand_id)
+                errors.append(f"{brand_id}: {e}")
 
-        except Exception as e:
-            log.error(f"Brand {brand_id} selhal: {e}")
-            failed_brands.append(brand_id)
+        log_run(
+            client,
+            started_at=started_at,
+            status="failed" if failed_brands else "success",
+            brands_total=len(brand_ids),
+            brands_failed=len(failed_brands),
+            error_message="; ".join(errors) if errors else None,
+        )
 
-    if failed_brands:
-        log.error(f"╔══════════════════════════════════════════╗")
-        log.error(f"║  Dokončeno s chybami — selhalo {len(failed_brands)}/{len(brand_ids)} brandů")
-        log.error(f"╚══════════════════════════════════════════╝")
-        # Nenulový exit kód → Cloud Run Job execution se označí jako Failed
-        # a je vidět v Cloud Monitoring / notifikacích.
+        if failed_brands:
+            log.error(f"╔══════════════════════════════════════════╗")
+            log.error(f"║  Dokončeno s chybami — selhalo {len(failed_brands)}/{len(brand_ids)} brandů")
+            log.error(f"╚══════════════════════════════════════════╝")
+            # Nenulový exit kód → Cloud Run Job execution se označí jako Failed
+            # a je vidět v Cloud Monitoring / notifikacích.
+            sys.exit(1)
+
+        log.info("╔══════════════════════════════════════════╗")
+        log.info("║  Hotovo ✓                                 ║")
+        log.info("╚══════════════════════════════════════════╝")
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        # Chyba mimo smyčku brandů (např. extract_brands) — zaloguj run jako
+        # failed i tady, ať je v etl_runs vidět i tenhle typ selhání.
+        log.error(f"Pipeline selhala: {e}")
+        log_run(
+            client,
+            started_at=started_at,
+            status="failed",
+            brands_total=len(brand_ids),
+            brands_failed=0,
+            error_message=str(e),
+        )
         sys.exit(1)
-
-    log.info("╔══════════════════════════════════════════╗")
-    log.info("║  Hotovo ✓                                 ║")
-    log.info("╚══════════════════════════════════════════╝")
 
 
 if __name__ == "__main__":

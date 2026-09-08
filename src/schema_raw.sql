@@ -115,3 +115,24 @@ CREATE TABLE IF NOT EXISTS `RankScaleDashboard.raw_citations`
   occurrences    INT64,
   etl_loaded_at  TIMESTAMP
 );
+
+
+-- ------------------------------------------------------------
+-- etl_runs
+-- Metadata tabulka (ne 1:1 mirror API) — jeden řádek per spuštění
+-- rankscale_extract_gcp.py, ať už úspěšné nebo neúspěšné.
+-- Zapisuje se přes log_run() v skriptu, vždy na konci běhu.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `RankScaleDashboard.etl_runs`
+(
+  run_id         STRING,     -- UUID, unikátní per spuštění
+  started_at     TIMESTAMP,
+  finished_at    TIMESTAMP,
+  mode           STRING,     -- "daily" | "backfill"
+  status         STRING,     -- "success" | "failed"
+  brands_total   INT64,
+  brands_failed  INT64,
+  rows_written   INT64,      -- součet přes všechny raw_* tabulky v tomto běhu
+  error_message  STRING,     -- NULL pokud status = "success"
+  etl_loaded_at  TIMESTAMP
+);

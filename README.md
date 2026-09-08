@@ -24,7 +24,7 @@ Scheduleru**.
 | `src/.dockerignore` | vynechá `env.yaml`/`schema_raw.sql` z Docker build kontextu (do image se stejně kopírují jen `requirements.txt` + skript) |
 | `src/requirements.txt` | Python závislosti (subset — bez `google-auth`, ten už táhne `google-cloud-bigquery`) |
 | `src/env.yaml` | cílový `GCP_PROJECT` + `BQ_DATASET` pro Cloud Run Job (viz krok 5) |
-| `src/schema_raw.sql` | DDL pro `raw_*` tabulky, bez natvrdo zapsaného project ID (viz krok 3b) |
+| `src/schema_raw.sql` | DDL pro `raw_*` tabulky + `etl_runs` (run log), bez natvrdo zapsaného project ID (viz krok 3b) |
 
 `src/` je vše, co se nasazuje do GCP (image + jeho build inputy). `doc/` jsou
 podpůrné dokumenty, které se nikam nenasazují.
@@ -191,6 +191,10 @@ stačí mít správně nastavené `$GCP_PROJECT` a soubor spustit beze změny.
 Pokud dataset už existuje, `bq mk` ohlásí `Dataset already exists` — to je
 neškodné, pokračuj rovnou na `bq query`.
 
+Všechny `CREATE TABLE` jsou `IF NOT EXISTS`, takže `bq query < src/schema_raw.sql`
+je bezpečné spustit znovu i na už běžícím prostředí (např. po přidání nové
+tabulky do souboru) — existující tabulky se nedotkne, jen založí ty chybějící.
+
 ## 4. Build image a push do Artifact Registry
 
 Build context je složka `src/` (tam je `Dockerfile` a vše, co `COPY` potřebuje),
@@ -293,6 +297,63 @@ gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
   --region=$REGION
 ```
 
+## 8. E-mailová notifikace při selhání
+
+Skript sám žádné e-maily neposílá (žádné SMTP klíče v kódu/secretech) —
+místo toho se napojí Cloud Monitoring přímo na výsledek Cloud Run Job
+executions, což je pro tenhle případ jednodušší a spolehlivější.
+
+Nejdřív notifikační kanál (e-mail, na který mají chodit alerty):
+
+```bash
+gcloud beta monitoring channels create \
+  --project=$GCP_PROJECT \
+  --display-name="Rankscale Extract – email" \
+  --type=email \
+  --channel-labels=email_address=TVUJ_EMAIL@example.com
+```
+
+Výstup obsahuje `name` ve tvaru `projects/$GCP_PROJECT/notificationChannels/NNNNNNN`
+— tohle číslo (`NNNNNNN`) potřebuješ v dalším kroku.
+
+Pak alerting policy, která hlídá built-in metriku Cloud Run Jobs
+(`run.googleapis.com/job/completed_execution_count` s labelem `result=failed`)
+a při jakémkoliv failed execution pošle e-mail:
+
+```bash
+cat > /tmp/rankscale-alert-policy.json <<'EOF'
+{
+  "displayName": "rankscale-extract: execution failed",
+  "combiner": "OR",
+  "conditions": [{
+    "displayName": "Failed execution",
+    "conditionThreshold": {
+      "filter": "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"rankscale-extract\" AND metric.type=\"run.googleapis.com/job/completed_execution_count\" AND metric.labels.result=\"failed\"",
+      "comparison": "COMPARISON_GT",
+      "thresholdValue": 0,
+      "duration": "0s",
+      "aggregations": [{
+        "alignmentPeriod": "300s",
+        "perSeriesAligner": "ALIGN_COUNT",
+        "crossSeriesReducer": "REDUCE_SUM"
+      }]
+    }
+  }],
+  "notificationChannels": ["projects/$GCP_PROJECT/notificationChannels/NNNNNNN"]
+}
+EOF
+
+# nahraď NNNNNNN skutečným ID kanálu z předchozího kroku
+gcloud alpha monitoring policies create \
+  --project=$GCP_PROJECT \
+  --policy-from-file=/tmp/rankscale-alert-policy.json
+```
+
+Od teď: jakmile execution skončí jako `failed` (tj. `sys.exit(1)` ve skriptu),
+přijde e-mail na zadanou adresu. Detail chyby (který brand, jaká výjimka) je
+buď v Cloud Loggingu (viz níže), nebo v tabulce `etl_runs` (viz krok o
+run logu výše — sloupec `error_message`).
+
 ---
 
 ## Monitoring a logy
@@ -300,9 +361,16 @@ gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
 - **Cloud Console → Cloud Run → Jobs → rankscale-extract → Executions** — historie běhů, exit kódy
 - **Cloud Logging** (`resource.type="cloud_run_job"`) — stdout/stderr ze skriptu
 - **Cloud Logging** (`resource.type="cloud_scheduler_job"`) — historie pokusů o spuštění, `status: {}` = úspěch, jinak obsahuje chybu
+- **BigQuery `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`** — jeden řádek per spuštění skriptu
+  (`started_at`, `finished_at`, `mode`, `status`, `brands_total`, `brands_failed`,
+  `rows_written`, `error_message`). Zapisuje se na konci každého běhu, ať dopadl
+  jakkoliv (viz `log_run()` v `src/rankscale_extract_gcp.py`). Rychlý přehled:
+  ```sql
+  SELECT * FROM `RankScaleDashboard.etl_runs` ORDER BY started_at DESC LIMIT 20
+  ```
 - Neúspěšný brand (chyba API/BQ) se loguje, ale extract pokračuje na dalších brandech;
-  pokud selhal **alespoň jeden**, celý job skončí s `exit(1)` → execution je označená **Failed**
-  a lze na to navázat alert v Cloud Monitoringu (`Cloud Run Job Execution Failed`).
+  pokud selhal **alespoň jeden**, celý job skončí s `exit(1)` → execution je označená
+  **Failed** a spustí e-mailový alert z kroku 8.
 
 ## Troubleshooting
 
