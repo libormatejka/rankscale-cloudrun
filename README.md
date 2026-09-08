@@ -13,6 +13,26 @@ Scheduleru**.
 
 ---
 
+## Obsah
+
+- [Obsah repozitáře](#obsah-repozitáře)
+- [Než začneš: vždy stejný `--project`](#než-začneš-vždy-stejný---project)
+- [1. Příprava GCP projektu](#1-příprava-gcp-projektu)
+- [2. Service account pro job](#2-service-account-pro-job)
+- [3. Rankscale API klíč do Secret Manageru](#3-rankscale-api-klíč-do-secret-manageru)
+- [3b. BigQuery dataset a tabulky](#3b-bigquery-dataset-a-tabulky)
+- [4. Build image a push do Artifact Registry](#4-build-image-a-push-do-artifact-registry)
+- [5. Vytvoření Cloud Run Job](#5-vytvoření-cloud-run-job)
+- [6. Denní spouštění přes Cloud Scheduler](#6-denní-spouštění-přes-cloud-scheduler)
+- [7. Aktualizace image po změně kódu](#7-aktualizace-image-po-změně-kódu)
+- [8. E-mailová notifikace při selhání](#8-e-mailová-notifikace-při-selhání)
+- [Monitoring a logy](#monitoring-a-logy)
+- [Troubleshooting](#troubleshooting)
+- [Lint](#lint)
+- [Lokální test image](#lokální-test-image)
+
+---
+
 ## Obsah repozitáře
 
 | Cesta | Účel |
