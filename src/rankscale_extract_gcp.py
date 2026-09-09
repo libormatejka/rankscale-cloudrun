@@ -194,10 +194,12 @@ def extract_search_terms(client: bigquery.Client, brand_ids: list[str]) -> None:
     for brand_id in brand_ids:
         data  = api_get("/v1/metrics/search-terms", {"brandId": brand_id, "limit": 5000})
         terms = data["data"]["searchTerms"]
-        rows  = []
+        # API umí vrátit stejný term v jedné odpovědi vícekrát (pozorováno v praxi) —
+        # search_term_id má být unikátní klíč, deduplikuj podle něj před zápisem.
+        rows_by_id: dict[str, dict] = {}
         for t in terms:
             topic = t.get("searchTermTopicRef") or {}
-            rows.append({
+            rows_by_id[t["id"]] = {
                 "brand_id":             brand_id,
                 "search_term_id":       t["id"],
                 "query":                t.get("term"),
@@ -212,7 +214,11 @@ def extract_search_terms(client: bigquery.Client, brand_ids: list[str]) -> None:
                 "last_execution_time":  t.get("lastExecutionTime"),
                 "next_execution_time":  t.get("nextScheduledExecutionTime"),
                 "executions_amount":    t.get("executionsAmount"),
-            })
+            }
+        rows = list(rows_by_id.values())
+        duplicates = len(terms) - len(rows)
+        if duplicates:
+            log.info(f"    {brand_id}: API vrátilo {len(terms)} termů, {duplicates} duplicit odfiltrováno")
         bq_append(client, tbl("search_terms"), rows)
         log.info(f"    {brand_id}: {len(rows)} termů")
         time.sleep(RATE_SLEEP)
