@@ -6,7 +6,7 @@ WEEKS      ?= 52
 BQ_DATASET ?= RankScaleDashboard
 
 # Musí sedět s CREATE TABLE příkazy v src/schema_raw.sql.
-TABLES := raw_brands raw_search_terms raw_brand_snapshots raw_answer_texts raw_citations etl_runs topic_metrics_history
+TABLES := etl_runs topic_metrics_history
 
 .PHONY: help lint build run deploy deploy-build deploy-update execute backfill check-env truncate-tables
 

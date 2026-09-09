@@ -1,21 +1,19 @@
 """
-Rankscale → BigQuery  |  Raw Extract  (L0 vrstva) — GCP verze
-Stahuje data z Rankscale API a ukládá je 1:1 do BigQuery (raw_ tabulky).
-Žádná transformační logika — ta patří do transformačních SQL skriptů.
+Rankscale → BigQuery  |  Topic Metrics History — GCP verze
+Stahuje týdenní historii visibility/sentiment (vlastní brand i konkurenti,
+rozdělenou po topicu) z Rankscale API a ukládá do BigQuery.
 
 Určeno pro spuštění jako Cloud Run Job (spouštěný Cloud Schedulerem).
-Rozdíly oproti paralelní GitHub Actions pipeline (jiný repozitář):
   - Autentizace k BigQuery přes Application Default Credentials (Cloud Run
     Job service account) — žádný GCP_SA_JSON soubor/secret není potřeba.
   - RANKSCALE_API_KEY se čte z env proměnné napojené na Secret Manager.
   - Neúspěch (výjimka na úrovni main) končí nenulovým exit kódem, aby to
     Cloud Run Job / Scheduler vyhodnotil jako failed execution.
 
-Režimy spuštění:
-  - Denní run (výchozí): stáhne aktuální týden, přeskočí pokud nejsou nová data
-  - Backfill:            BACKFILL_WEEKS=N projde N týdnů zpět (vždy zapíše)
-
-Časové okno: každý týden se volá s explicitním isoStartDate + isoEndDate (pondělí–neděle).
+Každý běh (denní i backfill) stahuje stejné, kompletní okno historie
+(TOPIC_METRICS_START_DATE → dnešek) a tabulku topic_metrics_history celou
+přepíše (TRUNCATE) — POST /v1/metrics/report vrací pokaždé celé okno znovu,
+ne jen nová data (viz doc/api/report.md).
 """
 
 import io
@@ -25,7 +23,7 @@ import os
 import sys
 import time
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 
 import requests
 from google.cloud import bigquery
@@ -64,10 +62,6 @@ def make_client() -> bigquery.Client:
     return bigquery.Client(project=GCP_PROJECT)
 
 
-def tbl(name: str) -> str:
-    return f"{GCP_PROJECT}.{BQ_DATASET}.raw_{name}"
-
-
 def bq_append(
     client: bigquery.Client,
     table: str,
@@ -92,23 +86,6 @@ def bq_append(
     ).result()
     run_stats["rows_written"] += len(rows)
     log.info(f"    → {table.split('.')[-1]}: {len(rows)} řádků zapsáno")
-
-
-def bq_max_snapshot(client: bigquery.Client, brand_id: str) -> datetime | None:
-    """Vrátí MAX(last_snapshot_at) z raw_brand_snapshots pro daný brand. None pokud tabulka prázdná."""
-    query = f"""
-        SELECT MAX(last_snapshot_at) AS max_snap
-        FROM `{GCP_PROJECT}.{BQ_DATASET}.raw_brand_snapshots`
-        WHERE brand_id = @brand_id
-    """
-    job_config = bigquery.QueryJobConfig(
-        query_parameters=[bigquery.ScalarQueryParameter("brand_id", "STRING", brand_id)]
-    )
-    try:
-        rows = list(client.query(query, job_config=job_config).result())
-        return rows[0].max_snap if rows and rows[0].max_snap else None
-    except Exception:
-        return None
 
 
 def log_run(
@@ -141,27 +118,6 @@ def log_run(
         log.error(f"Nepodařilo se zapsat run log do etl_runs: {e}")
 
 
-# ── Týdenní date ranges ────────────────────────────────────────────────────────
-def week_ranges(num_weeks: int) -> list[tuple[str, str]]:
-    """
-    Vrátí list (iso_start, iso_end) pro posledních N týdnů, od nejstaršího po nejnovější.
-    Každý týden = pondělí–neděle.
-    """
-    today = date.today()
-    monday = today - timedelta(days=today.weekday())
-    ranges = []
-    for i in range(num_weeks - 1, -1, -1):
-        start = monday - timedelta(weeks=i)
-        end   = start + timedelta(days=6)
-        ranges.append((start.isoformat(), end.isoformat()))
-    return ranges
-
-
-def current_week() -> tuple[str, str]:
-    """Vrátí (iso_start, iso_end) pro aktuální týden (pondělí–neděle)."""
-    return week_ranges(1)[0]
-
-
 # ── Rankscale API ──────────────────────────────────────────────────────────────
 HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
@@ -179,229 +135,19 @@ def api_post(path: str, body: dict) -> dict:
 
 
 # ── Extract kroky ──────────────────────────────────────────────────────────────
-def extract_brands(client: bigquery.Client) -> tuple[list[str], dict[str, list[tuple[str, str]]]]:
-    """Vrátí (brand_ids, topics_by_brand) — topics_by_brand mapuje brand_id na
-    [(topic_id, topic_name), ...] z operationalTopics, potřebné pro
+def extract_brand_topics(client: bigquery.Client) -> dict[str, list[tuple[str, str]]]:
+    """Vrátí topics_by_brand: brand_id → [(topic_id, topic_name), ...], z
+    operationalTopics. Nezapisuje nic do BQ — slouží jen jako vstup pro
     extract_topic_metrics_history()."""
-    log.info("── brands")
+    log.info("── brands (jen seznam topiců)")
     data   = api_get("/v1/metrics/brands", {"limit": 1000})
     brands = data["data"]["brands"]
-    rows   = [
-        {
-            "brand_id":     b["id"],
-            "name":         b["name"],
-            "domain":       b.get("url"),
-            "is_own_brand": True,
-        }
-        for b in brands
-    ]
-    bq_append(client, tbl("brands"), rows)
-    ids = [b["id"] for b in brands]
     topics_by_brand = {
         b["id"]: [(t["topicId"], t["name"]) for t in b.get("operationalTopics", [])]
         for b in brands
     }
-    log.info(f"    {len(ids)} brand(ů): {ids}")
-    return ids, topics_by_brand
-
-
-def extract_search_terms(client: bigquery.Client, brand_ids: list[str]) -> None:
-    log.info("── search_terms")
-    for brand_id in brand_ids:
-        data  = api_get("/v1/metrics/search-terms", {"brandId": brand_id, "limit": 5000})
-        terms = data["data"]["searchTerms"]
-        # API umí vrátit stejný term v jedné odpovědi vícekrát (pozorováno v praxi) —
-        # search_term_id má být unikátní klíč, deduplikuj podle něj před zápisem.
-        rows_by_id: dict[str, dict] = {}
-        for t in terms:
-            topic = t.get("searchTermTopicRef") or {}
-            rows_by_id[t["id"]] = {
-                "brand_id":             brand_id,
-                "search_term_id":       t["id"],
-                "query":                t.get("term"),
-                "engine":               (t.get("aiSearchEngines") or [""])[0],
-                "topic_id":             topic.get("id"),
-                "topic_name":           topic.get("name"),
-                "region":               t.get("region"),
-                "interval":             t.get("interval"),
-                "tags":                 json.dumps(t.get("tags", []), ensure_ascii=False),
-                "status":               t.get("status"),
-                "created_at":           t.get("createdAt"),
-                "last_execution_time":  t.get("lastExecutionTime"),
-                "next_execution_time":  t.get("nextScheduledExecutionTime"),
-                "executions_amount":    t.get("executionsAmount"),
-            }
-        rows = list(rows_by_id.values())
-        duplicates = len(terms) - len(rows)
-        if duplicates:
-            log.info(f"    {brand_id}: API vrátilo {len(terms)} termů, {duplicates} duplicit odfiltrováno")
-        bq_append(client, tbl("search_terms"), rows)
-        log.info(f"    {brand_id}: {len(rows)} termů")
-        time.sleep(RATE_SLEEP)
-
-
-def _fetch_snapshots(brand_id: str, iso_start: str, iso_end: str) -> tuple[list[dict], datetime | None]:
-    """
-    Zavolá search-terms-report API a vrátí (rows, api_max_snapshot_at).
-    rows = připravené řádky pro raw_brand_snapshots.
-    api_max_snapshot_at = nejnovější lastSnapshotAt ze všech search termů v response.
-    """
-    data  = api_post("/v1/metrics/search-terms-report", {
-        "brandId":            brand_id,
-        "isoStartDate":       iso_start,
-        "isoEndDate":         iso_end,
-        "selectedTopic":      "all",
-        "selectedTags":       "all",
-        "selectedEngine":     "all",
-        "selectedQuery":      "all",
-        "includeAnswerTexts": False,
-    })
-    terms = data["data"].get("searchTerms", [])
-    rows  = []
-    max_snap = None
-
-    for t in terms:
-        topic  = t.get("topic") or {}
-        engine = (t.get("aiSearchEngines") or [""])[0]
-        snap   = t.get("lastSnapshotAt")
-
-        if snap:
-            snap_dt = datetime.fromisoformat(snap.replace("Z", "+00:00"))
-            if max_snap is None or snap_dt > max_snap:
-                max_snap = snap_dt
-
-        base = {
-            "brand_id":         brand_id,
-            "search_term_id":   t["searchTermId"],
-            "engine":           engine,
-            "topic_id":         topic.get("id"),
-            "topic_name":       topic.get("name"),
-            "last_snapshot_at": snap,
-        }
-
-        def make_row(b: dict, is_own: bool, base: dict = base) -> dict:
-            return {
-                **base,
-                "brand_name":       b.get("name"),
-                "is_own_brand":     is_own,
-                "visibility_score": b.get("visibilityScore"),
-                "avg_sentiment":    b.get("avgSentiment"),
-                "avg_rank":         b.get("avgRank"),
-                "latest_rank":      b.get("latestRank"),
-                "detection_rate":   b.get("detectionRate"),
-                "top3_rate":        b.get("top3"),
-                "citation_count":   b.get("citationCount"),
-                "appearances":      b.get("appearances"),
-            }
-
-        if "ownBrand" in t:
-            rows.append(make_row(t["ownBrand"], is_own=True))
-        for comp in t.get("competitors", []):
-            rows.append(make_row(comp, is_own=False))
-
-    return rows, max_snap
-
-
-def _fetch_answer_texts(brand_id: str, iso_start: str, iso_end: str) -> list[dict]:
-    data  = api_post("/v1/metrics/search-terms-report", {
-        "brandId":            brand_id,
-        "isoStartDate":       iso_start,
-        "isoEndDate":         iso_end,
-        "selectedTopic":      "all",
-        "selectedTags":       "all",
-        "selectedEngine":     "all",
-        "selectedQuery":      "all",
-        "includeAnswerTexts": True,
-    })
-    terms = data["data"].get("searchTerms", [])
-    rows  = []
-    for t in terms:
-        for at in t.get("answerTexts") or []:
-            rows.append({
-                "brand_id":       brand_id,
-                "search_term_id": t["searchTermId"],
-                "execution_id":   at["executionId"],
-                "executed_at":    at.get("executedAt"),
-                "engine":         at.get("engine"),
-                "answer_text":    at.get("answerText"),
-            })
-    return rows
-
-
-def extract_snapshots_and_texts(
-    client: bigquery.Client,
-    brand_id: str,
-    iso_start: str,
-    iso_end: str,
-    force: bool = False,
-) -> bool:
-    """
-    force=False (denní run): stáhne a zapíše brand_snapshots (přeskočí, pokud
-    BQ už má tenhle snapshot) + answer_texts pro aktuální okno.
-    force=True (backfill): brand_snapshots se NEZAPISUJE — search-terms-report
-    vrací u ownBrand/competitors vždy jen poslední uložený snapshot bez ohledu
-    na isoStartDate/isoEndDate (viz doc/api/search-terms-report.md), takže by
-    šlo jen o duplicitní zápis stejných aktuálních dat na každou týdenní
-    iteraci. answer_texts naopak na isoStartDate/isoEndDate reaguje (ověřeno),
-    takže se při backfillu stahují a zapisují normálně.
-    Vrátí True pokud byla zapsána nějaká data, False pokud denní run přeskočil
-    (žádná nová data).
-    """
-    log.info(f"── brand_snapshots + answer_texts  (brand={brand_id}, {iso_start} → {iso_end})")
-
-    if not force:
-        snap_rows, api_max = _fetch_snapshots(brand_id, iso_start, iso_end)
-        bq_max = bq_max_snapshot(client, brand_id)
-        if api_max and bq_max and api_max <= bq_max:
-            log.info(f"    → přeskočeno: BQ již má snapshot {api_max.date()} (žádná nová data)")
-            return False
-        bq_append(client, tbl("brand_snapshots"), snap_rows)
-        time.sleep(RATE_SLEEP)
-
-    text_rows = _fetch_answer_texts(brand_id, iso_start, iso_end)
-    bq_append(client, tbl("answer_texts"), text_rows)
-
-    return True
-
-
-def extract_citations(client: bigquery.Client, brand_id: str) -> None:
-    log.info(f"── citations  (brand={brand_id})")
-    data = api_post("/v1/metrics/citations", {
-        "brandId":   brand_id,
-        "timeFrame": "7d",
-    })
-    rows = []
-    for term_entry in data["data"].get("domainSummary", {}).get("topDomainsByQuery", []):
-        query          = term_entry.get("query", "")
-        search_term_id = (term_entry.get("searchTermIds") or [None])[0]
-        for engine_entry in term_entry.get("engines", []):
-            engine = engine_entry.get("engineId", "")
-            for domain_entry in engine_entry.get("domains", []):
-                domain      = domain_entry.get("domain", "")
-                occurrences = domain_entry.get("occurrences", 0)
-                urls        = domain_entry.get("urls") or []
-                if urls:
-                    for url_entry in urls:
-                        rows.append({
-                            "brand_id":       brand_id,
-                            "search_term_id": search_term_id,
-                            "query":          query,
-                            "engine":         engine,
-                            "domain":         domain,
-                            "url":            url_entry.get("url"),
-                            "occurrences":    url_entry.get("occurrences", 0),
-                        })
-                else:
-                    rows.append({
-                        "brand_id":       brand_id,
-                        "search_term_id": search_term_id,
-                        "query":          query,
-                        "engine":         engine,
-                        "domain":         domain,
-                        "url":            None,
-                        "occurrences":    occurrences,
-                    })
-    bq_append(client, tbl("citations"), rows)
+    log.info(f"    {len(topics_by_brand)} brand(ů): {list(topics_by_brand.keys())}")
+    return topics_by_brand
 
 
 def _topic_metric_rows(
@@ -448,18 +194,24 @@ def extract_topic_metrics_history(
     topics_by_brand: dict[str, list[tuple[str, str]]],
     iso_start: str,
     iso_end: str,
-) -> None:
+) -> tuple[list[str], list[str]]:
     """Týdenní historie visibility/sentiment (+ pár dalších metrik) pro vlastní
-    brand i konkurenty, rozdělená po topicu. Na rozdíl od ostatních tabulek se
-    přepisuje celá (TRUNCATE) při každém běhu — POST /v1/metrics/report s
-    'selectedTopic' vrací pokaždé kompletní okno historie znovu, ne jen nová
-    data, takže WRITE_APPEND by jen duplikoval stejné týdny (viz
-    doc/api/report.md). Musí se volat zvlášť per topic — 'selectedTopic: all'
-    vrací jinou (nesprávnou, souhrnnou) historii pro konkurenty.
+    brand i konkurenty, rozdělená po topicu. Tabulka se přepisuje celá
+    (TRUNCATE) při každém běhu — POST /v1/metrics/report s 'selectedTopic'
+    vrací pokaždé kompletní okno historie znovu, ne jen nová data, takže
+    WRITE_APPEND by jen duplikoval stejné týdny (viz doc/api/report.md).
+    Musí se volat zvlášť per topic — 'selectedTopic: all' vrací jinou
+    (nesprávnou, souhrnnou) historii pro konkurenty.
+
+    Vrátí (failed_brands, error_messages) pro log_run().
     """
     log.info("── topic_metrics_history")
     rows: list[dict] = []
+    failed_brands: list[str] = []
+    errors: list[str] = []
+
     for brand_id, topics in topics_by_brand.items():
+        brand_failed = False
         for topic_id, topic_name in topics:
             try:
                 data = api_post("/v1/metrics/report", {
@@ -471,6 +223,8 @@ def extract_topic_metrics_history(
                 })
             except Exception as e:
                 log.error(f"    {brand_id}/{topic_name}: selhalo — {e}")
+                brand_failed = True
+                errors.append(f"{brand_id}/{topic_name}: {e}")
                 continue
 
             d = data["data"]
@@ -491,6 +245,9 @@ def extract_topic_metrics_history(
             log.info(f"    {brand_id}/{topic_name}: {len(comp_series.get('competitors', []))} konkurentů")
             time.sleep(RATE_SLEEP)
 
+        if brand_failed:
+            failed_brands.append(brand_id)
+
     bq_append(
         client,
         f"{GCP_PROJECT}.{BQ_DATASET}.topic_metrics_history",
@@ -498,66 +255,41 @@ def extract_topic_metrics_history(
         write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
     )
 
+    return failed_brands, errors
+
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main() -> None:
     mode = f"BACKFILL {BACKFILL_WEEKS} týdnů" if BACKFILL_WEEKS else "denní run"
     log.info("╔══════════════════════════════════════════╗")
-    log.info(f"║  Rankscale Raw Extract (GCP)  [{mode}]")
+    log.info(f"║  Rankscale Topic Metrics History (GCP)  [{mode}]")
     log.info("╚══════════════════════════════════════════╝")
 
     started_at = NOW
     client     = make_client()
-    brand_ids: list[str] = []
+    topics_by_brand: dict[str, list[tuple[str, str]]] = {}
 
     try:
-        brand_ids, topics_by_brand = extract_brands(client)
-        extract_search_terms(client, brand_ids)
-        extract_topic_metrics_history(
+        topics_by_brand = extract_brand_topics(client)
+
+        failed_brands, errors = extract_topic_metrics_history(
             client, topics_by_brand,
             iso_start=TOPIC_METRICS_START_DATE,
             iso_end=date.today().isoformat(),
         )
 
-        # Backfill: N týdnů zpět s explicitními date ranges (pondělí–neděle)
-        # Denní run: jen aktuální týden
-        is_backfill = bool(BACKFILL_WEEKS)
-        weeks = week_ranges(BACKFILL_WEEKS) if is_backfill else [current_week()]
-
-        log.info(f"    Týdny ke stažení: {[w[0] for w in weeks]}")
-
-        failed_brands = []
-        errors = []
-        for brand_id in brand_ids:
-            log.info(f"━━ Brand: {brand_id}")
-            try:
-                for iso_start, iso_end in weeks:
-                    extract_snapshots_and_texts(
-                        client, brand_id, iso_start, iso_end, force=is_backfill
-                    )
-                    time.sleep(RATE_SLEEP)
-
-                # Citations: vždy jen aktuální týden (API nepodporuje historický backfill)
-                extract_citations(client, brand_id)
-                time.sleep(RATE_SLEEP)
-
-            except Exception as e:
-                log.error(f"Brand {brand_id} selhal: {e}")
-                failed_brands.append(brand_id)
-                errors.append(f"{brand_id}: {e}")
-
         log_run(
             client,
             started_at=started_at,
             status="failed" if failed_brands else "success",
-            brands_total=len(brand_ids),
+            brands_total=len(topics_by_brand),
             brands_failed=len(failed_brands),
             error_message="; ".join(errors) if errors else None,
         )
 
         if failed_brands:
             log.error("╔══════════════════════════════════════════╗")
-            log.error(f"║  Dokončeno s chybami — selhalo {len(failed_brands)}/{len(brand_ids)} brandů")
+            log.error(f"║  Dokončeno s chybami — selhalo {len(failed_brands)}/{len(topics_by_brand)} brandů")
             log.error("╚══════════════════════════════════════════╝")
             # Nenulový exit kód → Cloud Run Job execution se označí jako Failed
             # a je vidět v Cloud Monitoring / notifikacích.
@@ -570,14 +302,14 @@ def main() -> None:
     except SystemExit:
         raise
     except Exception as e:
-        # Chyba mimo smyčku brandů (např. extract_brands) — zaloguj run jako
-        # failed i tady, ať je v etl_runs vidět i tenhle typ selhání.
+        # Chyba mimo smyčku brandů (např. extract_brand_topics) — zaloguj run
+        # jako failed i tady, ať je v etl_runs vidět i tenhle typ selhání.
         log.error(f"Pipeline selhala: {e}")
         log_run(
             client,
             started_at=started_at,
             status="failed",
-            brands_total=len(brand_ids),
+            brands_total=len(topics_by_brand),
             brands_failed=0,
             error_message=str(e),
         )

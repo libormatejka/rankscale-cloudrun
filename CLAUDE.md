@@ -4,10 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A daily ETL pipeline that pulls data from the Rankscale Metrics API and appends it
-1:1 (no transformation) into BigQuery `raw_*` tables. It runs as a single Python
-script inside a **Cloud Run Job**, triggered daily by **Cloud Scheduler**. There is
-no server, no framework — one script, one container, one scheduled invocation.
+A daily pipeline that pulls weekly visibility/sentiment history (own brand
+and named competitors, broken down per topic) from the Rankscale Metrics API
+into a single BigQuery table, `topic_metrics_history`. It runs as a single
+Python script inside a **Cloud Run Job**, triggered daily by **Cloud
+Scheduler**. There is no server, no framework — one script, one container,
+one scheduled invocation.
+
+This repo previously ingested a much wider set of `raw_*` tables (brands,
+search terms, per-search-term brand snapshots, answer texts, citations) —
+that approach was retired because the source endpoint
+(`search-terms-report`) turned out not to return real historical data (see
+`doc/api/search-terms-report.md`). `doc/api/` still documents those
+endpoints and the investigation that led here; the pipeline itself no longer
+calls most of them (see `doc/api/README.md` for which endpoints are still
+live).
 
 ## Commands
 
@@ -20,7 +31,7 @@ make deploy-build     # gcloud builds submit src --tag ... (push new image to Ar
 make deploy-update    # gcloud run jobs update ... --image ... (point the Cloud Run Job at it)
 make deploy          # deploy-build + deploy-update
 make execute         # gcloud run jobs execute (manual/test run)
-make backfill WEEKS=N # one-off backfill run (default WEEKS=52)
+make backfill WEEKS=N # one-off run with BACKFILL_WEEKS set (see note below — no longer changes behavior)
 ```
 
 `deploy-*`/`execute`/`backfill` require `GCP_PROJECT`, `REGION`, `REPO` exported in
@@ -37,7 +48,9 @@ deliberate style in this file.
   and `schema_raw.sql` (DDL). Nothing outside `src/` is copied into the image —
   `src/.dockerignore` explicitly keeps `env.yaml`/`schema_raw.sql` out of the build
   context too, since the Dockerfile only `COPY`s the script and `requirements.txt`.
-- `doc/` — supporting docs that are never deployed (currently `SECURITY_CHECKLIST.md`).
+- `doc/` — supporting docs that are never deployed: `SECURITY_CHECKLIST.md`,
+  `API_KEY_ROTATION.md`, and `api/` (per-endpoint Rankscale API reference,
+  built from real Postman captures — see `doc/api/README.md`).
 - Root — only `README.md`, `Makefile`, `pyproject.toml` (ruff config), `requirements-dev.txt`.
 
 ## Architecture: one script, four config surfaces
@@ -60,55 +73,48 @@ one to change:
    job via `--set-secrets`. Never put other config here.
 4. **`BACKFILL_WEEKS`** — set per-invocation only via `--update-env-vars` on a manual
    `gcloud run jobs execute` / `make backfill`; never persisted in the Job config.
+   Kept for the `mode` label in `etl_runs` and in case a future data source needs
+   real incremental backfill — today it does not change what
+   `extract_topic_metrics_history()` fetches (see below).
 
-## Data flow and run modes
+## Data flow
 
-- `extract_brands` → `extract_search_terms` → `extract_topic_metrics_history`
-  → per-brand loop of `extract_snapshots_and_texts` (+ `extract_citations`,
-  current week only — the API has no historical backfill for citations).
-- `extract_topic_metrics_history` runs on every invocation (daily or
-  backfill) — it fetches `POST /v1/metrics/report` once per (brand, topic)
-  pair with `selectedTopic=<topic_id>` (topics come from `operationalTopics`
-  in the `extract_brands` response) and `aggregation=weekly`, covering
-  `TOPIC_METRICS_START_DATE` through today. Unlike `search-terms-report`,
-  `/report` genuinely returns historical time series for both the own brand
-  (`ownBrandMetrics.historicalData`) and competitors
-  (`competitorTimeSeriesData`) — but only when scoped to one topic at a time;
-  `selectedTopic: "all"` returns different (aggregate, not comparable) data.
-  See `doc/api/report.md` for how this was confirmed.
-- **Daily run** (default): only the current week (Mon–Sun). Before writing
-  `raw_brand_snapshots`, `bq_max_snapshot()` checks BigQuery's existing max
-  `last_snapshot_at` for that brand and skips the write if the API has nothing newer
-  — this is the "skip-if-no-new-data" behavior referenced in the table docs.
-  `bq_max_snapshot` uses a parameterized query (`@brand_id`), not an f-string —
-  keep it that way; a prior SQL-injection finding (see `doc/SECURITY_CHECKLIST.md`)
-  was fixed here and in the parallel pipeline.
-- **Backfill** (`BACKFILL_WEEKS=N`): iterates `week_ranges(N)`. **Skips
-  `raw_brand_snapshots` entirely** — Rankscale's `search-terms-report`
-  endpoint always returns each term's latest stored snapshot regardless of
-  `isoStartDate`/`isoEndDate` (confirmed both by their docs and by testing:
-  see `doc/api/search-terms-report.md`), so looping weeks would only rewrite
-  the same current data N times. `answer_texts` *does* respect
-  `isoStartDate`/`isoEndDate` (confirmed by testing), so backfill still
-  fetches and writes it with `force=True` bypassing the skip check. `/v1/metrics/report`
-  has genuine historical data but only for the own brand, not competitors
-  (`doc/api/report.md`) — not currently used.
-- One brand failing does not stop the run — failures are collected in `main()` and
-  only raise `sys.exit(1)` (marking the Cloud Run execution "Failed") after all
-  brands have been attempted. A separate top-level `try/except` in `main()` catches
-  failures *outside* the per-brand loop (e.g. `extract_brands` itself failing) and
-  still logs a run row before exiting — see below.
+- `extract_brand_topics()` → `GET /v1/metrics/brands`, but only to build
+  `topics_by_brand: dict[brand_id, list[(topic_id, topic_name)]]` from each
+  brand's `operationalTopics`. Nothing from this call is written to BigQuery.
+- `extract_topic_metrics_history()` → for every `(brand_id, topic_id)` pair,
+  calls `POST /v1/metrics/report` with `selectedTopic=<topic_id>` and
+  `aggregation=weekly`, covering `TOPIC_METRICS_START_DATE` (hardcoded,
+  `2026-05-11` — when real data starts in this Rankscale account) through
+  today. **Must be called once per topic** — `selectedTopic: "all"` returns
+  different, non-comparable aggregate data; confirmed via a real A/B test,
+  see `doc/api/report.md`.
+- From each response: `ownBrandMetrics.historicalData.weekly` gives the own
+  brand's weekly time series; `competitorTimeSeriesData.weekly.competitors[]`
+  gives the same per named competitor (plus a catch-all `"Others"` bucket).
+  Both get flattened into rows by `_topic_metric_rows()` and written to
+  `topic_metrics_history`. Own brand and competitors use different key sets
+  in the API (`ownBrandMetrics` has more fields) — `_topic_metric_rows()`
+  only pulls the subset both have in common.
+- Runs unconditionally on every invocation (daily or backfill) — there is no
+  skip-if-no-new-data check and no per-brand loop with partial early exit;
+  a single call sequence covers all brands and topics.
+- One topic call failing marks its brand as failed (collected in
+  `extract_topic_metrics_history()`) but does not stop the rest — other
+  topics/brands are still attempted. `main()` raises `sys.exit(1)` only after
+  everything has been attempted, if anything failed. A separate top-level
+  `try/except` in `main()` catches failures *outside* that loop (e.g.
+  `extract_brand_topics()` itself failing) and still logs a run row before
+  exiting.
 
 ## Per-run logging (`etl_runs`) and alerting
 
-Every run — success, partial brand failure, or a failure before the brand loop
-even starts — writes exactly one summary row to `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`
+Every run — success, partial failure, or a failure before extraction even
+starts — writes exactly one summary row to `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`
 via `log_run()`, called from both the normal path and the outer `except` in `main()`.
 `run_stats["rows_written"]` is a module-level counter incremented inside `bq_append()`
-itself, so it tallies rows across every table touched in the run without each
-extract function having to report back explicitly. If `log_run()`'s own write fails,
-it only logs the error — it must never mask or override the run's actual success/failure
-status or exit code.
+itself. If `log_run()`'s own write fails, it only logs the error — it must
+never mask or override the run's actual success/failure status or exit code.
 
 Failure notification is deliberately *not* done in Python (no SMTP secrets in the
 job) — it's wired at the infra level via a Cloud Monitoring alerting policy on the
@@ -120,19 +126,19 @@ the "something failed" trigger.
 ## BigQuery write pattern
 
 All writes go through `bq_append()` (NDJSON → `load_table_from_file`), default
-`WRITE_APPEND`. There is no dedup/merge logic anywhere — every table is
-append-only, **except `topic_metrics_history`**, which `extract_topic_metrics_history()`
-writes with `write_disposition=WRITE_TRUNCATE` (passed explicitly to
-`bq_append()`) — deliberate: `/v1/metrics/report` returns the complete history
-window fresh on every call, so appending would duplicate every week on every
-run. Keep that override in mind if you touch `bq_append()`'s signature.
-Table names for the `raw_*` tables come from `tbl(name)` which prefixes
-`raw_`; `etl_runs` and `topic_metrics_history` are referenced by their full
-names directly since neither is a `raw_*`
-mirror table. Schema changes go in `src/schema_raw.sql` (all `CREATE TABLE IF NOT
-EXISTS`, safe to re-run against a live dataset) and must stay project-ID-agnostic —
-the project is supplied externally via `bq query --project_id=...`, not hardcoded
-in the SQL.
+`WRITE_APPEND`. `etl_runs` is append-only (one row per run) as you'd expect.
+**`topic_metrics_history` is the exception** — `extract_topic_metrics_history()`
+writes it with `write_disposition=WRITE_TRUNCATE` (passed explicitly to
+`bq_append()`) and replaces the whole table on every run — deliberate:
+`/v1/metrics/report` returns the complete history window fresh on every
+call, so appending would duplicate every week on every run. Keep that
+override in mind if you touch `bq_append()`'s signature. Both tables are
+referenced by their full `{GCP_PROJECT}.{BQ_DATASET}.<name>` name directly
+(no `raw_` prefix convention — that belonged to the retired tables). Schema
+changes go in `src/schema_raw.sql` (all `CREATE TABLE IF NOT EXISTS`, safe
+to re-run against a live dataset) and must stay project-ID-agnostic — the
+project is supplied externally via `bq query --project_id=...`, not
+hardcoded in the SQL.
 
 ## Behavioral rules
 

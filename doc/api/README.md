@@ -1,8 +1,8 @@
 # Rankscale API — dokumentace endpointů
 
-Neoficiální dokumentace endpointů Rankscale Metrics API, jak je používá tenhle
-repozitář (`src/rankscale_extract_gcp.py`). Mapováno ručně přes Postman proti
-skutečným odpovědím — ne přepis oficiální Rankscale dokumentace (tu nemáme).
+Neoficiální dokumentace endpointů Rankscale Metrics API. Mapováno ručně přes
+Postman proti skutečným odpovědím — ne přepis oficiální Rankscale
+dokumentace (tu nemáme).
 
 Cíl: u každého endpointu mít strukturu requestu/response a byznysový popis, aby
 šlo změny v API (nová pole, změněné chování) rozpoznat a promítnout do kódu
@@ -10,15 +10,22 @@ vědomě, ne až omylem při ladění produkčního problému (viz zjištění u
 `search-terms-report`, že `isoStartDate`/`isoEndDate` ve skutečnosti historii
 nefiltruje — [search-terms-report.md](search-terms-report.md)).
 
+**Aktuální pipeline (`src/rankscale_extract_gcp.py`) používá jen
+`/v1/metrics/brands` (jen pro seznam topiců, nezapisuje se) a
+`/v1/metrics/report`.** Ostatní endpointy níže byly prozkoumány cestou k
+tomuhle řešení (a mnohé z nich krátce v pipeline byly, než jsme přešli na
+`topic_metrics_history`) — dokumentace zůstává jako referenční materiál o
+chování API, i když se teď z pipeline nevolají.
+
 ## Endpointy
 
 | Endpoint | Metoda | Použití v pipeline | Dokumentace |
 |---|---|---|---|
-| `/v1/metrics/brands` | GET | `extract_brands()` | [brands.md](brands.md) |
-| `/v1/metrics/search-terms` | GET | `extract_search_terms()` | [search-terms.md](search-terms.md) |
-| `/v1/metrics/search-terms-report` | POST | `extract_snapshots_and_texts()` | [search-terms-report.md](search-terms-report.md) — ⚠️ nevrací historii metrik, viz dokument |
-| `/v1/metrics/citations` | POST | `extract_citations()` | [citations.md](citations.md) — ⚠️ kód čte jen zlomek odpovědi, chybí kontrola limitů (`paginationInfo`) a historie (`citationsByDomain[].citations[].counts`) se nevyužívá |
-| `/v1/metrics/report` | POST | **nepoužívá se** — kandidát na historický backfill vlastního brandu i konkurentů | [report.md](report.md) — ✅ historie existuje pro oba (`ownBrandMetrics.historicalData` + `competitorTimeSeriesData`), jiná granularita než `raw_brand_snapshots` |
+| `/v1/metrics/brands` | GET | `extract_brand_topics()` — jen `operationalTopics`, nic se nezapisuje | [brands.md](brands.md) |
+| `/v1/metrics/report` | POST | `extract_topic_metrics_history()` — volané per (brand, topic) se `selectedTopic` | [report.md](report.md) — ✅ historie existuje pro vlastní brand i konkurenty, jen scoped na jeden topic zvlášť |
+| `/v1/metrics/search-terms` | GET | **nepoužívá se** (dřív `extract_search_terms()`) | [search-terms.md](search-terms.md) |
+| `/v1/metrics/search-terms-report` | POST | **nepoužívá se** (dřív `extract_snapshots_and_texts()`) | [search-terms-report.md](search-terms-report.md) — ⚠️ nevrací historii metrik, viz dokument |
+| `/v1/metrics/citations` | POST | **nepoužívá se** (dřív `extract_citations()`) | [citations.md](citations.md) — ⚠️ kód četl jen zlomek odpovědi, chybí kontrola limitů (`paginationInfo`) a historie (`citationsByDomain[].citations[].counts`) se nevyužívala |
 | `/v1/metrics/topics` (nepotvrzeno) | GET (odhad) | **nepoužívá se** | [topics.md](topics.md) — metoda/cesta nepotvrzená, jen odvozená z odpovědi |
 | `/v1/metrics/sentiment` (nepotvrzeno) | POST (odhad) | **nepoužívá se** | [sentiment.md](sentiment.md) — keyword-level sentiment detail, objemná odpověď, metoda nepotvrzená |
 

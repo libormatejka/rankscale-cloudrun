@@ -1,8 +1,9 @@
 # Rankscale → BigQuery — Cloud Run Job
 
-Denní pipeline, která tahá data z Rankscale Metrics API a ukládá je 1:1 do
-BigQuery (`raw_*` tabulky). Běží jako **Cloud Run Job** spouštěný z **Cloud
-Scheduleru**.
+Denní pipeline, která z Rankscale Metrics API stahuje **týdenní historii
+visibility/sentimentu vlastního brandu i konkurentů, rozdělenou po topicu**
+(`topic_metrics_history` tabulka v BigQuery). Běží jako **Cloud Run Job**
+spouštěný z **Cloud Scheduleru**.
 
 - **Autentizace k BigQuery**: Application Default Credentials — service
   account je přiřazený přímo k jobu, žádný klíč se nikam nekopíruje.
@@ -50,7 +51,7 @@ Scheduleru**.
 | `src/.dockerignore` | vynechá `env.yaml`/`schema_raw.sql` z Docker build kontextu (do image se stejně kopírují jen `requirements.txt` + skript) |
 | `src/requirements.txt` | Python závislosti (subset — bez `google-auth`, ten už táhne `google-cloud-bigquery`) |
 | `src/env.yaml` | cílový `GCP_PROJECT` + `BQ_DATASET` pro Cloud Run Job (viz krok 5) |
-| `src/schema_raw.sql` | DDL pro `raw_*` tabulky + `etl_runs` (run log) + `topic_metrics_history` (týdenní historie), bez natvrdo zapsaného project ID (viz krok 3b) |
+| `src/schema_raw.sql` | DDL pro `topic_metrics_history` + `etl_runs` (run log), bez natvrdo zapsaného project ID (viz krok 3b) |
 
 `src/` je vše, co se nasazuje do GCP (image + jeho build inputy). `doc/` jsou
 podpůrné dokumenty, které se nikam nenasazují.
@@ -89,9 +90,9 @@ BQ_DATASET: RankScaleDashboard
 ```
 
 Skript je čte jako `os.environ["GCP_PROJECT"]` / `os.environ["BQ_DATASET"]`
-(viz `src/rankscale_extract_gcp.py`, funkce `tbl()` — tabulky jsou
-`{GCP_PROJECT}.{BQ_DATASET}.raw_*`). Při vytváření jobu (krok 5) se soubor
-předá přes `--env-vars-file=src/env.yaml`.
+(viz `src/rankscale_extract_gcp.py` — tabulky jsou `{GCP_PROJECT}.{BQ_DATASET}.topic_metrics_history`
+a `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`). Při vytváření jobu (krok 5) se
+soubor předá přes `--env-vars-file=src/env.yaml`.
 
 ---
 
@@ -206,8 +207,8 @@ gcloud secrets versions add rankscale-api-key --project=$GCP_PROJECT \
 
 ## 3b. BigQuery dataset a tabulky
 
-Skript (`bq_append`) očekává, že dataset a tabulky `raw_*` už existují — sám
-je nezakládá:
+Skript (`bq_append`) očekává, že dataset a tabulky (`topic_metrics_history`,
+`etl_runs`) už existují — sám je nezakládá:
 
 ```bash
 bq --project_id=$GCP_PROJECT mk --dataset --location=EU ${GCP_PROJECT}:RankScaleDashboard
@@ -264,7 +265,7 @@ Proměnné:
 |---|---|
 | `GCP_PROJECT`, `BQ_DATASET` | v souboru `src/env.yaml` (uprav a ulož) |
 | `RANKSCALE_API_KEY` | Secret Manager, mountnutý přes `--set-secrets` (krok 3) |
-| `BACKFILL_WEEKS` | volitelné, jen pro backfill, viz níže — nastavuje se zvlášť při konkrétním spuštění |
+| `BACKFILL_WEEKS` | volitelné — viz sekce Backfill níže; na chování skriptu dnes nemá vliv, jen se zapíše jako `mode: "backfill"` do `etl_runs` |
 
 Když později změníš `src/env.yaml` (jiný dataset), aplikuješ to na existující job:
 
@@ -283,8 +284,6 @@ Zkratka: `make execute`.
 
 ### Backfill
 
-Jednorázově přepíše env proměnnou jen pro tento konkrétní run:
-
 ```bash
 gcloud run jobs execute rankscale-extract --project=$GCP_PROJECT --region=$REGION \
   --update-env-vars="BACKFILL_WEEKS=52"
@@ -292,12 +291,13 @@ gcloud run jobs execute rankscale-extract --project=$GCP_PROJECT --region=$REGIO
 
 Zkratka: `make backfill` (výchozí `WEEKS=52`, jinak `make backfill WEEKS=10`).
 
-**Backfill doplňuje jen `raw_answer_texts` a `raw_citations` (aktuální
-týden), ne `raw_brand_snapshots`.** Rankscale API u `search-terms-report`
-vrací pro `ownBrand`/`competitors` vždy jen poslední aktuální snapshot bez
-ohledu na požadované historické okno — backfill by tam jen duplikoval stejná
-data, kód ho proto pro tuhle tabulku vůbec nevolá. Detaily a jak jsme to
-ověřili: [doc/api/search-terms-report.md](doc/api/search-terms-report.md).
+**Poznámka:** `extract_topic_metrics_history()` stahuje při každém běhu
+(denním i backfillu) stejné, kompletní okno historie
+(`TOPIC_METRICS_START_DATE` → dnešek) a `topic_metrics_history` vždy celou
+přepíše — `BACKFILL_WEEKS` proto reálně nic nemění, jen se propíše jako
+`mode: "backfill"` do `etl_runs`. Zkratka zůstává funkční pro případ, že by
+se v budoucnu k historii přidal zdroj dat, který skutečně inkrementální
+backfill potřebuje.
 
 ## 6. Denní spouštění přes Cloud Scheduler
 
@@ -440,14 +440,15 @@ konkurenti) — v Rankscale UI se nezobrazuje, při čtení případně vyfiltru
   ```sql
   SELECT * FROM `RankScaleDashboard.etl_runs` ORDER BY started_at DESC LIMIT 20
   ```
-- Neúspěšný brand (chyba API/BQ) se loguje, ale extract pokračuje na dalších brandech;
-  pokud selhal **alespoň jeden**, celý job skončí s `exit(1)` → execution je označená
-  **Failed** a spustí e-mailový alert z kroku 8.
+- Neúspěšný brand (chyba API u některého z jeho topiců) se loguje, extract
+  pokračuje na dalších brandech/topicech; pokud selhal **alespoň jeden**, celý
+  job skončí s `exit(1)` → execution je označená **Failed** a spustí
+  e-mailový alert z kroku 8.
 
 ## Smazání dat (truncate)
 
-**Nevratně** smaže všechna data ve všech tabulkách (`raw_*` i `etl_runs`), schéma
-zůstává — pro znovunahrání dat od nuly (např. po chybném backfillu):
+**Nevratně** smaže všechna data ve všech tabulkách (`topic_metrics_history` i
+`etl_runs`), schéma zůstává — pro znovunahrání dat od nuly:
 
 ```bash
 make truncate-tables CONFIRM=yes

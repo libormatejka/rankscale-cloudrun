@@ -11,15 +11,17 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 
 ## 🔴 Kritické
 
-- [x] **SQL injection v `bq_max_snapshot()`** — [../src/rankscale_extract_gcp.py:83-89](../src/rankscale_extract_gcp.py#L83-L89)
-      `brand_id` jde f-stringem přímo do SQL dotazu bez parametrizace.
-      Dnes pochází z Rankscale API (důvěryhodné), ale žádný security review
+- [x] **SQL injection v `bq_max_snapshot()`** (funkce od té doby z kódu
+      **odstraněná** — patřila k `raw_brand_snapshots`, která se v rámci
+      přechodu na `topic_metrics_history` přestala plnit; odkaz na řádek níže
+      je tak jen historický, ne aktuální).
+      `brand_id` šel f-stringem přímo do SQL dotazu bez parametrizace.
+      Dnes pocházel z Rankscale API (důvěryhodné), ale žádný security review
       tuhle domněnku neakceptuje.
       **Fix:** `bigquery.ScalarQueryParameter` + `QueryJobConfig(query_parameters=...)`.
-      Opraveno v tomto repozitáři (`src/rankscale_extract_gcp.py`) i v
-      paralelní GitHub Actions pipeline (`rankscale_extract.py` v jiném
-      repozitáři, stejný bug byl i tam). Nový image nasazen a otestován
-      (`rankscale-extract-q67hv`, `Completed: True`).
+      Opraveno v tomto repozitáři i v paralelní GitHub Actions pipeline
+      (`rankscale_extract.py` v jiném repozitáři, stejný bug byl i tam). Nový
+      image nasazen a otestován (`rankscale-extract-q67hv`, `Completed: True`).
 
 - [x] **Výchozí Compute service account má `roles/editor` na projektu `rankscale`**
       (`968813943604-compute@developer.gserviceaccount.com`). Tenhle SA reálně
@@ -119,10 +121,9 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       Google-managed key.
       **Fix:** zvážit CMEK, pokud to vyžaduje compliance/regulace.
 
-- [ ] **`raw_answer_texts` obsahuje syrové AI odpovědi bez klasifikace dat**
-      Pokud by se v promptech/odpovědích objevily citlivé/osobní údaje, nikde
-      to není klasifikováno ani maskováno.
-      **Fix:** data classification review, zvážit DLP scanning.
+- [x] **`raw_answer_texts` obsahuje syrové AI odpovědi bez klasifikace dat**
+      *(neaplikovatelné — tabulka `raw_answer_texts` byla v rámci přechodu na
+      `topic_metrics_history` smazaná i s daty, viz README.)*
 
 - [ ] **Dvě nezávislé kopie stejného datasetu bez jasného vlastnictví**
       GitHub Actions → `libor-matejkacz`, Cloud Run Job → `rankscale`. Bez
