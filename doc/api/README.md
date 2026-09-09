@@ -17,8 +17,18 @@ nefiltruje — [search-terms-report.md](search-terms-report.md)).
 | `/v1/metrics/brands` | GET | `extract_brands()` | [brands.md](brands.md) |
 | `/v1/metrics/search-terms` | GET | `extract_search_terms()` | [search-terms.md](search-terms.md) |
 | `/v1/metrics/search-terms-report` | POST | `extract_snapshots_and_texts()` | [search-terms-report.md](search-terms-report.md) — ⚠️ nevrací historii metrik, viz dokument |
-| `/v1/metrics/citations` | POST | `extract_citations()` | *TODO* |
-| `/v1/metrics/report` | POST | **nepoužívá se** — kandidát na historický backfill vlastního brandu | [report.md](report.md) — ✅ historie existuje, ale jen pro `ownBrandMetrics`, ne pro konkurenty |
+| `/v1/metrics/citations` | POST | `extract_citations()` | [citations.md](citations.md) — ⚠️ kód čte jen zlomek odpovědi, chybí kontrola limitů (`paginationInfo`) a historie (`citationsByDomain[].citations[].counts`) se nevyužívá |
+| `/v1/metrics/report` | POST | **nepoužívá se** — kandidát na historický backfill vlastního brandu i konkurentů | [report.md](report.md) — ✅ historie existuje pro oba (`ownBrandMetrics.historicalData` + `competitorTimeSeriesData`), jiná granularita než `raw_brand_snapshots` |
+| `/v1/metrics/topics` (nepotvrzeno) | GET (odhad) | **nepoužívá se** | [topics.md](topics.md) — metoda/cesta nepotvrzená, jen odvozená z odpovědi |
+| `/v1/metrics/sentiment` (nepotvrzeno) | POST (odhad) | **nepoužívá se** | [sentiment.md](sentiment.md) — keyword-level sentiment detail, objemná odpověď, metoda nepotvrzená |
+
+## Syrové odpovědi (fixtures)
+
+`full-responses/` obsahuje kompletní reálné JSON odpovědi, ze kterých byla
+dokumentace psaná (`brands.json`, `search-terms.json`, `search-terms-report.json`,
+`metrics-report.json`, `citations.json`, `sentiment.json`, `topics.json`) —
+pro dohledání detailu, který se do `.md` souborů nevešel, nebo pro budoucí
+ověření, že se chování API nezměnilo.
 
 ## Jak dokumentaci doplňovat
 

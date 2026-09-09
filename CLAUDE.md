@@ -120,6 +120,12 @@ in the SQL.
 
 ## Behavioral rules
 
+- **Always ask for explicit confirmation before writing or changing any code
+  — describe the intended change first and wait for a yes.** This applies
+  even when the change follows directly from a decision the user just made
+  (e.g. picking an option in a question) — a decision about *what* to do is
+  not the same as approval to *make the edit right now*. Docs-only changes
+  the user explicitly asked for in the same message are fine to do directly.
 - Before committing, run `make lint` and make sure it passes.
 - Never modify `src/schema_raw.sql` without `CREATE TABLE IF NOT EXISTS` — it must
   stay safe to re-run against a live dataset (see README step 3b).

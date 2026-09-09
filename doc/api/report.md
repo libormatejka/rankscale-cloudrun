@@ -3,43 +3,40 @@
 ## K čemu to je (byznysově)
 
 Dashboard-level report pro brand: agregované metriky vlastního brandu i
-konkurentů, **plus skutečná historická časová řada** (na rozdíl od
-`search-terms-report`). Tohle je endpoint, na který official dokumentace
+konkurentů, **plus skutečná historická časová řada pro oba** (na rozdíl od
+`search-terms-report`). Tohle je endpoint, na který oficiální dokumentace
 `search-terms-report` odkazuje slovy *"Use /report for historical metrics
 over an exact range."*
 
 **Nepoužívá se v pipeline zatím vůbec** — dokumentuje se jako kandidát na
-náhradu/doplnění backfillu, viz zjištění níže.
+historický backfill vlastního brandu i konkurentů, viz zjištění níže.
 
-## ✅ Potvrzeno: skutečná historie existuje — ale jen pro vlastní brand
+## ✅ Potvrzeno: skutečná historie existuje pro vlastní brand i konkurenty
 
-V `data.ownBrandMetrics.historicalData.daily` jsou reálně odlišné hodnoty pro
-různá `timestamps`:
+Ověřeno kompletní (needitovanou) odpovědí — `POST /v1/metrics/report` s
+`{"aggregation": "weekly", "isoStartDate": "2026-06-01", "isoEndDate": "2026-08-31"}`
+vrátil 14 týdenních bodů (2026-06-01 → 2026-08-31), s odlišnými hodnotami
+metrik pro každý týden. Historie je na dvou různých místech v odpovědi:
 
-| timestamp | visibilityScore | sentiment | mentions |
-|---|---|---|---|
-| 2026-04-07 | 58.5 | 63 | 180 |
-| 2026-04-14 | 56.5 | 63 | 176 |
-| 2026-04-21 | 61.3 | 62.7 | 182 |
-| 2026-04-28 | 58.9 | 64.3 | 176 |
+- **`data.ownBrandMetrics.historicalData`** — historie **jen vlastního
+  brandu**, navíc rozpadnutá i podle topicu (`topicMetricsData`) a enginu
+  (`engineMetricsData`).
+- **`data.competitorTimeSeriesData`** — historie **jen konkurentů**
+  (vlastní brand tady není, viz gotcha níže), jeden objekt per konkurent
+  s vlastním polem metrik zarovnaným na společné `timestamps[]`.
 
-To je jednoznačně **jiné chování** než `search-terms-report`, kde bylo pro
-libovolné požadované okno vráceno identické `lastSnapshotAt`/metriky. `/report`
-tedy skutečně agreguje přes čas, ne jen vrací poslední snapshot.
+Obě jsou reálná časová řada, ne opakovaně stejná data — potvrzeno vizuální
+kontrolou (`Air Bank.metrics.visibilityScore` = `[59.7, 54.7, 56.1, 50.8,
+37.3, ...]`, 14 odlišných hodnot pro 14 týdnů).
 
-**Ale:** `historicalData`/`topicMetricsData`/`engineMetricsData` (všechny s
-časovou řadou) jsou **jen uvnitř `ownBrandMetrics`**. `competitorMetrics[]`
-(vlastní brand + konkurenti) je **plochý seznam bez historie** — má jen
-`latestValue`, `trend` (delta vs. předchozí perioda) a agregáty
-(`avgRank`, `avgSentiment`, `appearances`...), žádné `timestamps[]`.
-
-**Důsledek pro backfill:** i `/report` by dal jen historii **vlastního**
-brandu (`ownBrandMetrics.historicalData`), ne historii konkurentů. Struktura
-`raw_brand_snapshots` dnes ukládá oba (own i competitors) na úrovni
-jednotlivého search termu — tohle je hrubší agregace (celý brand, ne po
-termech) a bez konkurenční historie. Nejde o 1:1 náhradu backfillu
-`brand_snapshots`, spíš o jiný typ dat (brand-level trend, ne
-term-level snapshoty).
+**Důsledek pro backfill:** `/report` dá historii pro **oba** — vlastní brand
+i konkurenty — na rozdíl od dřívějšího (chybného) závěru v tomhle dokumentu.
+Je to ale jiná granularita, než jakou má dnes `raw_brand_snapshots`: `/report`
+agreguje **na úrovni celého brandu za týden** (přes všechny search termy
+dohromady), ne po jednotlivých search termech. Nešlo by o 1:1 náhradu
+backfillu `brand_snapshots` beze změny schématu — potřebovala by se nová
+tabulka s jinou granularitou (brand × týden × konkurent, ne brand × search
+term × konkurent).
 
 ## Request
 
@@ -49,14 +46,30 @@ Authorization: Bearer <RANKSCALE_API_KEY>
 Content-Type: application/json
 ```
 
+Tělo použité při testu:
+```json
+{
+  "brandId": "...",
+  "timeFrame": "30d",
+  "aggregation": "weekly",
+  "periodOffset": 0,
+  "selectedTopic": "all",
+  "selectedTags": "all",
+  "selectedEngine": "all",
+  "selectedQuery": "all",
+  "isoStartDate": "2026-06-01",
+  "isoEndDate": "2026-08-31"
+}
+```
+
 ### Parametry podle oficiální dokumentace
 
 | Parametr | Typ | Poznámka |
 |---|---|---|
 | `brandId` | string, povinné | — |
-| `aggregation` | enum `hourly`/`daily`/`weekly`/`monthly` | velikost bucketu v `historicalData`/`topicMetricsData`/`engineMetricsData` — **není** to trailing-average okno (to je `timeFrame`) |
-| `timeFrame` | enum `24h`/`7d`/`30d`/`3m`/`1y` | vybírá snapshot pro `ownBrandMetrics`/`competitorMetrics` (aktuální hodnoty), stejné one-window-down mapování jako jinde (24h/7d→snapshotH24, 30d→snapshotD7, 3m/1y→snapshotD30); default `7d` |
-| `isoStartDate`/`isoEndDate` | string (ISO datum) | vybírá execution window pro historii — **na rozdíl od `search-terms-report` tady skutečně ovlivňuje vrácená historická data** (nepotvrzeno druhým testem s explicitním rozsahem, ale `historicalData` v ukázce jasně obsahuje víc period) |
+| `aggregation` | enum `hourly`/`daily`/`weekly`/`monthly` | velikost bucketu v `historicalData`/`topicMetricsData`/`engineMetricsData`/`competitorTimeSeriesData` — **není** to trailing-average okno (to je `timeFrame`) |
+| `timeFrame` | enum `24h`/`7d`/`30d`/`3m`/`1y` | vybírá snapshot pro `ownBrandMetrics`/`competitorMetrics` (aktuální/"latest" hodnoty), stejné one-window-down mapování jako jinde; default `7d` |
+| `isoStartDate`/`isoEndDate` | string (ISO datum) | vybírá execution window pro historii — **potvrzeno funkční**: s `aggregation=weekly` a tříměsíčním rozsahem vrátilo přesně 14 týdenních bodů pokrývajících celé okno |
 | `showLastRunMetrics` | boolean | `false` (default) = trailing average dle `timeFrame`; `true` = "Raw latest" (`lastRunMetrics`), ignoruje to mapování |
 | `periodOffset` | integer | — |
 | `includeNotFoundExecutions` | boolean | — |
@@ -71,109 +84,159 @@ Neznámá pole v těle se ignorují a nahlásí přes `warnings[]`.
 
 ## Response
 
-Ověřeno reálným voláním (Postman). Response je výrazně bohatší než u
-ostatních endpointů — obálka:
+Ověřeno kompletní (needitovanou) reálnou odpovědí. Obálka — **potvrzeno, tři
+top-level klíče, žádné další**:
 
 ```json
 {
   "success": true,
   "data": {
-    "ownBrandMetrics": { /* ... */ },
-    "competitorMetrics": [ /* ... */ ]
-    /* pravděpodobně další top-level klíče (topicMetrics/engineMetrics
-       samostatně od ownBrandMetrics?) — odpověď byla oříznutá, TODO ověřit */
+    "ownBrandMetrics": { "...": "aktuální agregáty + historie vlastního brandu" },
+    "competitorMetrics": [ "...": "plochý seznam AKTUÁLNÍCH hodnot, own brand + konkurenti, bez historie" ],
+    "competitorTimeSeriesData": { "...": "historie KONKURENTŮ (bez vlastního brandu)" }
   }
 }
 ```
 
-### `data.ownBrandMetrics`
-
-Aktuální agregáty + historie:
+### `data.ownBrandMetrics` — aktuální agregáty + historie vlastního brandu
 
 ```json
 {
   "name": "Česká spořitelna (Test)",
   "aliases": ["Spořka", "Česká spořitelna"],
-  "visibilityScore": 58.9,
-  "sentiment": 64.3,
-  "mentions": 714,
-  "sources": 122,
-  "citations": 470,
-  "avgPosition": 3.4,
-  "detectionRate": 70.7,
-  "top3": 41.4,
-  "validMetricsCount": 4,
-  "executionsAnalyzed": 999,
-  "trends": { "visibilityScore": -2.4, "sentiment": 1.6, "...": "delta vs. předchozí perioda" },
+  "visibilityScore": 54.6,
+  "sentiment": 63.5,
+  "mentions": 2224,
+  "sources": 109,
+  "citations": 2097,
+  "avgPosition": 3.3,
+  "detectionRate": 65.8,
+  "top3": 38.7,
+  "validMetricsCount": 14,
+  "executionsAnalyzed": 3644,
+  "trends": { "visibilityScore": 1.5, "sentiment": -2.3, "...": "delta vs. předchozí perioda" },
   "historicalData": {
-    "hourly": { "...": "prázdné pole u každé metriky, nepoužito v ukázce" },
-    "daily": {
-      "visibilityScore": [58.5, 56.5, 61.3, 58.9],
-      "timestamps": ["2026-04-07T00:00:00.000Z", "2026-04-14T00:00:00.000Z", "2026-04-21T00:00:00.000Z", "2026-04-28T00:00:00.000Z"],
-      "brandNotFound": [true, true, true, true]
+    "hourly": { "...": "prázdné pole u každé metriky (nepoužito při aggregation=weekly)" },
+    "daily": { "...": "prázdné (nepoužito při aggregation=weekly)" },
+    "weekly": {
+      "visibilityScore": [59, 55.7, 52.9, 53.8, 44.8, 48.8, 51.6, 48.1, 51.5, 55.8, 56.2, 55.4, 53.1, 54.6],
+      "sentiment": [70.4, 69.9, 69.1, "...": "14 hodnot"],
+      "mentions": ["...": "14 hodnot"],
+      "sources": ["...": "14 hodnot"],
+      "citations": ["...": "14 hodnot"],
+      "citationCounts": ["...": "duplicitní s citations"],
+      "avgPosition": ["...": "14 hodnot"],
+      "detectionRate": ["...": "14 hodnot"],
+      "top3": ["...": "14 hodnot"],
+      "executionsAnalyzed": ["...": "14 hodnot"],
+      "timestamps": ["2026-06-01T00:00:00.000Z", "2026-06-08T00:00:00.000Z", "...": "14 týdenních dat, po sobě jdoucích, bez děr"],
+      "brandNotFound": [true, true, "...": "14× true — viz gotcha níže"]
     },
-    "weekly": { "...": "prázdné v ukázce" },
-    "monthly": { "...": "prázdné v ukázce" }
+    "monthly": { "...": "prázdné (nepoužito při aggregation=weekly)" }
   },
-  "topicMetricsData": { "daily": [ { "topicId": "...", "topicName": "...", "visibilityScore": [...], "timestamps": [...] } ] },
-  "engineMetricsData": { "daily": [ { "engineId": "...", "engineName": "...", "visibilityScore": [...], "timestamps": [...] } ] },
-  "preselectionWhitelist": ["Air Bank", "Raiffeisenbank", "..."],
-  "preselectionBlacklist": ["CS", "Cofidis", "..."],
+  "topicMetricsData": {
+    "hourly": [], "daily": [],
+    "weekly": [
+      { "topicId": "ZFyMrgG0cuuEAvCdf1nr", "topicName": "Brand", "visibilityScore": ["...": "14 hodnot"], "timestamps": ["...": "14 hodnot"], "...": "stejná sada metrik jako historicalData" },
+      { "topicId": "aVaq5pTG3Io4GR853gAf", "topicName": "Půjčky/Úvěry", "...": "...", "timestamps": ["...": "jen 11 hodnot — topic nemá data pro všechny týdny okna" } ],
+    "monthly": []
+  },
+  "engineMetricsData": {
+    "hourly": [], "daily": [],
+    "weekly": [ { "engineId": "chatgpt_gui", "engineName": "chatgpt_gui", "visibilityScore": ["...": "N hodnot"], "timestamps": ["...": "N hodnot"] }, "...": "jeden objekt per engine (chatgpt_gui, google_ai_overview, google_ai_mode_gui, perplexity_gui, bing_copilot_gui, google_gemini_gui pozorováno)" ],
+    "monthly": []
+  },
+  "preselectionWhitelist": ["Air Bank", "Komercni banka", "..."],
+  "preselectionBlacklist": ["Usetreno.cz", "Banky.cz", "...": "197 položek v ukázce"],
   "manualWhitelist": [],
   "manualBlacklist": []
 }
 ```
 
 Zajímavá pole:
-- **`aliases`** — přímo odpovídá `brandInfo.names` z `/v1/metrics/brands`
-  (viz [brands.md](brands.md)), jen bez samotného hlavního jména.
-- **`preselectionWhitelist`/`preselectionBlacklist`** — interní seznam
-  jmen, která Rankscale automaticky rozpoznává/ignoruje jako konkurenty
+- **`aliases`** — odpovídá `brandInfo.names` z `/v1/metrics/brands` (viz
+  [brands.md](brands.md)).
+- **`preselectionWhitelist`/`preselectionBlacklist`** — interní seznam jmen,
+  která Rankscale automaticky rozpoznává/ignoruje jako konkurenty
   (`preselectionBlacklist` obsahuje zjevné false-positives typu "Visa",
-  "Mastercard", "banka" — obecná slova, co by jinak matchovala jako brand).
-  Vysvětluje, proč se v `competitors[]` u `search-terms-report` neobjevují
-  irelevantní entity.
-- **`brandNotFound: [true, true, true, true]`** u historie, přestože
-  `visibilityScore` má nenulové hodnoty (58.5 atd.) — **rozporuplné na první
-  pohled**, nejspíš `brandNotFound` značí něco jiného než "nulová
-  viditelnost" (možná "nebyl nalezen v *raw* executions tohoto konkrétního
-  bucketu" vs. metriky počítané jinak). Nevysvětleno, netestováno dál —
-  flag pro budoucí zkoumání, než se cokoliv postaví na tomhle poli.
-- `aggregation: "daily"` v requestu, ale vrácené `timestamps` jsou týden od
-  sebe (2026-04-07, -14, -21, -28) — "daily" bucket zjevně neznamená denní
-  krok dat, spíš že se surová data agregují do bucketů podle nějaké vlastní
-  logiky (možná vázané na `interval: weekly` u samotných search termů, viz
-  [search-terms.md](search-terms.md)). Nejasné, nepotvrzeno.
+  "Mastercard", generické banky — vysvětluje, proč se v `competitors[]` u
+  `search-terms-report` neobjevují irelevantní entity).
+- **`topicMetricsData`/`engineMetricsData`** mají **kratší `timestamps[]`**
+  než hlavní `historicalData`, pokud daný topic/engine neměl data po celé
+  požadované okno (pozorováno u topicu "Půjčky/Úvěry": 11 bodů místo 14) —
+  při parsování **nelze spoléhat na to, že všechny časové řady mají stejnou
+  délku/zarovnání**, je nutné párovat podle vlastního `timestamps[]`, ne podle
+  indexu napříč různými topic/engine objekty.
+- **`brandNotFound: [true, true, ...]`** u historie, přestože `visibilityScore`
+  má nenulové hodnoty — nevysvětleno, netestováno dál. Flag pro budoucí
+  zkoumání, než se na tomhle poli něco postaví.
 
-### `data.competitorMetrics[]`
-
-Plochý seznam (own brand + konkurenti pohromadě, rozlišeno `isOwnBrand`),
-**bez historie**:
+### `data.competitorMetrics[]` — aktuální hodnoty, own brand + konkurenti, bez historie
 
 ```json
 {
   "name": "CSOB",
   "isOwnBrand": false,
-  "latestValue": 47.8,
-  "trend": 3.1,
-  "variations": ["ČSOB", "ČSOB / Stavební spořitelna ČSOB", "..."],
-  "visibilityScore": 47.8,
-  "latestRank": 2,
-  "benchmarkAvgPosition": 4.2,
-  "avgRank": 4.4,
-  "avgSentiment": 59.3,
-  "appearances": 599,
-  "citationCount": 349,
-  "detectionRate": 61,
-  "top3": 28.1,
-  "validMetricsCount": 249,
-  "benchmarkObservationCount": 4
+  "latestValue": 39.2,
+  "trend": -0.7,
+  "variations": ["ČSOB", "ČSOB / Era", "...": "20 variant v ukázce"],
+  "visibilityScore": 39.2,
+  "latestRank": 7,
+  "benchmarkAvgPosition": 3.9,
+  "avgRank": 4.1,
+  "avgSentiment": 62.3,
+  "appearances": 1740,
+  "citationCount": 1385,
+  "detectionRate": 49.6,
+  "top3": 22.4,
+  "validMetricsCount": 225,
+  "benchmarkObservationCount": 14
 }
 ```
 
-`variations[]` tady (na rozdíl od `search-terms-report`, kde bylo vždy
-prázdné) **skutečně obsahuje alternativní názvy** konkurenta — užitečné pro
-matching v `answer_text`/citacích, kdyby se to chtělo použít.
+Vlastní brand je v tomhle poli taky (`isOwnBrand: true`), se stejnou sadou
+polí jako konkurenti — je to jediné místo v odpovědi, kde jsou vlastní brand
+i konkurenti pohromadě ve stejném formátu (ale bez historie).
+
+### `data.competitorTimeSeriesData` — historie KONKURENTŮ (bez vlastního brandu)
+
+```json
+{
+  "hourly": { "timestamps": [], "competitors": [] },
+  "daily": { "timestamps": [], "competitors": [] },
+  "weekly": {
+    "timestamps": ["2026-06-01T00:00:00.000Z", "2026-06-08T00:00:00.000Z", "...": "14 hodnot, stejné jako v ownBrandMetrics.historicalData.weekly.timestamps"],
+    "competitors": [
+      {
+        "name": "Air Bank",
+        "isOwnBrand": false,
+        "variations": ["Air Bank", "Air Bank (Účet pro mladé)", "..."],
+        "metrics": {
+          "visibilityScore": [59.7, 54.7, 56.1, 50.8, 37.3, 45.6, 48.2, 52.5, 52.9, 49.2, 50.6, 56.1, 52.6, 53],
+          "sentiment": [74.7, 75.5, "...": "14 hodnot"],
+          "avgPosition": ["...": "14 hodnot"],
+          "detectionRate": ["...": "14 hodnot"],
+          "top3": ["...": "14 hodnot"],
+          "mentions": ["...": "14 hodnot"],
+          "citations": ["...": "14 hodnot"]
+        }
+      }
+    ]
+  },
+  "monthly": { "timestamps": [], "competitors": [] }
+}
+```
+
+V testu (`aggregation: weekly`) mělo `weekly.competitors[]` **21 položek** —
+20 pojmenovaných konkurentů + jedna speciální položka **`"name": "Others"`**
+(souhrn menších/nesledovaných konkurentů do jedné bucket entity). Všechny
+mají `isOwnBrand: false` — **vlastní brand v tomhle poli není vůbec**, jeho
+historie je jen v `ownBrandMetrics.historicalData`.
+
+`metrics` u konkurenta má **užší sadu polí** než `ownBrandMetrics.historicalData`
+— chybí `sources`, `citationCounts`, `executionsAnalyzed`, `brandNotFound`
+(jsou jen `visibilityScore`, `sentiment`, `avgPosition`, `detectionRate`,
+`top3`, `mentions`, `citations`).
 
 ## Pole, která pipeline nečte
 
@@ -181,26 +244,31 @@ Celý endpoint se v pipeline zatím nepoužívá — nic z něj se nezapisuje ni
 
 ## Známé chování / gotchas
 
-- **Jediný zdroj skutečné historie vlastního brandu** — na rozdíl od
-  `search-terms-report`. Pro historii konkurentů zatím nemáme potvrzený
-  žádný endpoint.
-- Response byla v Postmanu oříznutá (50k znaků limit) — nevíme jistě, jestli
-  existují další top-level klíče vedle `ownBrandMetrics`/`competitorMetrics`
-  (např. samostatné `topicMetrics`/`engineMetrics` na úrovni `data`, ne jen
-  uvnitř `ownBrandMetrics`). **TODO: ověřit kompletní odpověď.**
+- **Historie existuje pro vlastní brand (`ownBrandMetrics.historicalData`) i
+  konkurenty (`competitorTimeSeriesData`), ale ve dvou různých strukturách a
+  vlastní brand není v `competitorTimeSeriesData` — je nutné je sloučit ručně,
+  párováno podle `name`/`isOwnBrand`, ne podle společného pole.**
+- Granularita je **brand-level týdenní agregát přes všechny search termy**,
+  ne per-search-term jako dnešní `raw_brand_snapshots` — přímá náhrada
+  backfillu bez změny schématu není možná.
+- `topicMetricsData`/`engineMetricsData` mohou mít kratší `timestamps[]` než
+  hlavní `historicalData` — nespoléhat na shodnou délku/indexové zarovnání
+  napříč různými poli, vždy párovat podle vlastního `timestamps[]`.
+- `"Others"` entita v `competitorTimeSeriesData.weekly.competitors[]` —
+  souhrn nesledovaných/menších konkurentů, ne konkrétní brand.
 - `brandNotFound` pole neodpovídá intuitivně nenulovým metrikám ve stejném
   bodě — nevysvětleno, netestováno dál.
-- Vztah `aggregation` parametru k reálné granularitě vrácených `timestamps`
-  není jasný z jednoho vzorku (`daily` → týdenní kroky) — potřeba otestovat
-  s jinou hodnotou (`weekly`, `monthly`) a delším/kratším `isoStartDate`—`isoEndDate`
-  rozsahem, než se na tenhle endpoint něco staví.
+- `aggregation=weekly` s tříměsíčním (`isoStartDate`–`isoEndDate`) oknem dalo
+  čistě 14 po sobě jdoucích týdenních bodů bez děr a bez duplicit — na rozdíl
+  od dřívějšího nejasného pozorování s `aggregation=daily`, které vracelo jen
+  4 body týden od sebe (možná byl použitý kratší `isoStartDate`–`isoEndDate`
+  rozsah, nebylo přímo srovnáno).
 
-## Další kroky, než se rozhodne o backfillu
+## Další kroky, než se implementuje backfill
 
-1. Ověřit kompletní strukturu odpovědi (bez oříznutí).
-2. Otestovat `aggregation=weekly` s dlouhým `isoStartDate`/`isoEndDate`
-   rozsahem (např. 36 týdnů) a ověřit, že `timestamps[]` skutečně pokryje
-   celé okno bez děr a bez duplicit.
-3. Rozhodnout, jestli je brand-level historie (bez konkurentů) dostatečná pro
-   účel, kvůli kterému se backfill řešil — pokud je cílem sledovat i
-   konkurenty do minulosti, `/report` sám o sobě nestačí.
+1. Rozhodnout o nové tabulce pro brand-level týdenní historii (jiná
+   granularita než `raw_brand_snapshots`) — návrh schématu + skript zatím
+   neřešeno, čeká na rozhodnutí.
+2. Ošetřit v parsování nerovnoměrnou délku `timestamps[]` napříč
+   `historicalData`/`topicMetricsData`/`engineMetricsData`/`competitorTimeSeriesData`.
+3. Vyjasnit `brandNotFound` sémantiku, než se na ní něco postaví.

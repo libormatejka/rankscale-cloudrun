@@ -59,7 +59,15 @@ Ověřeno reálným voláním (Postman, 2026-09). Obálka:
   ],
   "operationalSearchTerms": [
     { "searchTermId": "xS7FDRiCviDIlTtUg80f" }
-  ]
+  ],
+  "operationalTags": ["dip", "investice", "product-brand"],
+  "defaultCountry": "cz",
+  "defaultLanguage": "cs",
+  "syncSchedules": {
+    "monthly": null,
+    "weekly": { "weekday": "tue" },
+    "daily": { "hour": 6 }
+  }
 }
 ```
 
@@ -82,6 +90,9 @@ Ověřeno reálným voláním (Postman, 2026-09). Obálka:
 | `additionalDomains` | další domény brandu kromě `url` (prázdné v ukázce) | pro `raw_citations`/`raw_answer_texts` matching by mohly být relevantní |
 | `createdAt` | kdy byl brand v Rankscale založen | — |
 | `operationalTopics[]` | témata (`topicId`+`name`+`addedAt`), která má brand nastavená — odpovídá `topic_id`/`topic_name` v `raw_search_terms`/`raw_brand_snapshots` | zdroj pravdy pro mapování topic_id → topic_name, dnes se topic_name bere z jiných endpointů |
+| `operationalTags[]` | tagy nastavené na úrovni brandu (v ukázce `["dip", "investice", "product-brand"]`) — odpovídají `tags` u jednotlivých search termů | — |
+| `defaultCountry`/`defaultLanguage` | výchozí region/jazyk brandu (`"cz"`/`"cs"`) | odpovídá `region` u search termů — možná zdroj pravdy místo natvrdo čtení z každého termu zvlášť |
+| `syncSchedules` | kdy Rankscale spouští sync pro tenhle brand (`daily.hour`, `weekly.weekday`, `monthly`) | vysvětluje časování `lastExecutionTime`/`nextScheduledExecutionTime` u search termů — v ukázce `daily.hour: 6` sedí na denní spouštění pipeline v 6:30 UTC (README krok 6) |
 | `operationalSearchTerms[]` | seznam `searchTermId`, které patří tomuto brandu | **viz gotcha níže — obsahuje duplicity** |
 
 ## Zápis do BigQuery
