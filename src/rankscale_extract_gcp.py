@@ -320,23 +320,27 @@ def extract_snapshots_and_texts(
     force: bool = False,
 ) -> bool:
     """
-    Stáhne brand_snapshots a answer_texts pro daný brand a týdenní okno.
-    force=True: vždy zapíše (backfill).
-    force=False: přeskočí pokud BQ už má data pro tento snapshot (denní run).
-    Vrátí True pokud data byla zapsána, False pokud přeskočeno.
+    force=False (denní run): stáhne a zapíše brand_snapshots (přeskočí, pokud
+    BQ už má tenhle snapshot) + answer_texts pro aktuální okno.
+    force=True (backfill): brand_snapshots se NEZAPISUJE — search-terms-report
+    vrací u ownBrand/competitors vždy jen poslední uložený snapshot bez ohledu
+    na isoStartDate/isoEndDate (viz doc/api/search-terms-report.md), takže by
+    šlo jen o duplicitní zápis stejných aktuálních dat na každou týdenní
+    iteraci. answer_texts naopak na isoStartDate/isoEndDate reaguje (ověřeno),
+    takže se při backfillu stahují a zapisují normálně.
+    Vrátí True pokud byla zapsána nějaká data, False pokud denní run přeskočil
+    (žádná nová data).
     """
     log.info(f"── brand_snapshots + answer_texts  (brand={brand_id}, {iso_start} → {iso_end})")
 
-    snap_rows, api_max = _fetch_snapshots(brand_id, iso_start, iso_end)
-
     if not force:
+        snap_rows, api_max = _fetch_snapshots(brand_id, iso_start, iso_end)
         bq_max = bq_max_snapshot(client, brand_id)
         if api_max and bq_max and api_max <= bq_max:
             log.info(f"    → přeskočeno: BQ již má snapshot {api_max.date()} (žádná nová data)")
             return False
-
-    bq_append(client, tbl("brand_snapshots"), snap_rows)
-    time.sleep(RATE_SLEEP)
+        bq_append(client, tbl("brand_snapshots"), snap_rows)
+        time.sleep(RATE_SLEEP)
 
     text_rows = _fetch_answer_texts(brand_id, iso_start, iso_end)
     bq_append(client, tbl("answer_texts"), text_rows)

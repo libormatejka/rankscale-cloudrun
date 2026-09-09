@@ -291,6 +291,13 @@ gcloud run jobs execute rankscale-extract --project=$GCP_PROJECT --region=$REGIO
 
 Zkratka: `make backfill` (výchozí `WEEKS=52`, jinak `make backfill WEEKS=10`).
 
+**Backfill doplňuje jen `raw_answer_texts` a `raw_citations` (aktuální
+týden), ne `raw_brand_snapshots`.** Rankscale API u `search-terms-report`
+vrací pro `ownBrand`/`competitors` vždy jen poslední aktuální snapshot bez
+ohledu na požadované historické okno — backfill by tam jen duplikoval stejná
+data, kód ho proto pro tuhle tabulku vůbec nevolá. Detaily a jak jsme to
+ověřili: [doc/api/search-terms-report.md](doc/api/search-terms-report.md).
+
 ## 6. Denní spouštění přes Cloud Scheduler
 
 Scheduler job zakládej ve stejném `$GCP_PROJECT` jako Cloud Run Job a SA.

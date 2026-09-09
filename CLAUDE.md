@@ -73,8 +73,16 @@ one to change:
   `bq_max_snapshot` uses a parameterized query (`@brand_id`), not an f-string —
   keep it that way; a prior SQL-injection finding (see `doc/SECURITY_CHECKLIST.md`)
   was fixed here and in the parallel pipeline.
-- **Backfill** (`BACKFILL_WEEKS=N`): iterates `week_ranges(N)` and always writes
-  (`force=True`), bypassing the skip check.
+- **Backfill** (`BACKFILL_WEEKS=N`): iterates `week_ranges(N)`. **Skips
+  `raw_brand_snapshots` entirely** — Rankscale's `search-terms-report`
+  endpoint always returns each term's latest stored snapshot regardless of
+  `isoStartDate`/`isoEndDate` (confirmed both by their docs and by testing:
+  see `doc/api/search-terms-report.md`), so looping weeks would only rewrite
+  the same current data N times. `answer_texts` *does* respect
+  `isoStartDate`/`isoEndDate` (confirmed by testing), so backfill still
+  fetches and writes it with `force=True` bypassing the skip check. `/v1/metrics/report`
+  has genuine historical data but only for the own brand, not competitors
+  (`doc/api/report.md`) — not currently used.
 - One brand failing does not stop the run — failures are collected in `main()` and
   only raise `sys.exit(1)` (marking the Cloud Run execution "Failed") after all
   brands have been attempted. A separate top-level `try/except` in `main()` catches

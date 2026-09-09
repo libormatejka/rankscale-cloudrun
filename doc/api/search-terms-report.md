@@ -30,23 +30,19 @@ Jinými slovy:
 - Jediné, co `isoStartDate`/`isoEndDate` v tomhle endpointu skutečně omezuje,
   je `answerTexts` (texty odpovědí) — ne `ownBrand`/`competitors` metriky.
 - Pro **skutečnou historii metrik přes přesný rozsah dat existuje jiný
-  endpoint: `/v1/metrics/report`** — ten tady zatím nemáme zdokumentovaný a
-  pipeline ho nepoužívá.
+  endpoint: `/v1/metrics/report`** — zdokumentován v [report.md](report.md),
+  ale vrací historii jen pro vlastní brand, ne konkurenty, takže nejde o
+  přímou náhradu.
 
-**Tohle přesně potvrzuje empirický test, který jsme dělali dřív** (dvě volání
-se stejným brandem, jedno pro aktuální týden a jedno pro týden 20 týdnů
-zpátky, obě vrátila identická `lastSnapshotAt` — viz konverzace, ne zapsáno
-jako samostatný soubor). Backfill přes `search-terms-report` (smyčka přes
-`week_ranges(N)` v `main()`/`extract_snapshots_and_texts()`) je proto
-**funkčně no-op na `ownBrand`/`competitors` data** — každá iterace zapíše
-znovu ten samý aktuální snapshot. Jediné, co při backfillu skutečně dostaneš
-jinak, jsou `answerTexts` (ty `isoStartDate`/`isoEndDate` omezuje).
-
-**Doporučení pro kód:** buď (a) přestat volat `search-terms-report` v cyklu
-přes týdny pro `brand_snapshots` a `force=True` chování zrušit/přehodnotit
-(ponechat jen pro `answerTexts`), nebo (b) prozkoumat `/v1/metrics/report`
-jako náhradu pro historický backfill `brand_snapshots`. Zatím nerozhodnuto —
-viz TODO v `doc/api/README.md`.
+**Potvrzeno dvěma nezávislými empirickými testy** — (1) dvě volání se stejným
+brandem, jedno pro aktuální týden a jedno pro týden 20 týdnů zpátky, obě
+vrátila identická `lastSnapshotAt`; (2) stejný test s `includeAnswerTexts:
+true` ukázal opačné chování — `answerTexts` se mezi okny lišily a
+odpovídaly požadovanému rozsahu (viz gotcha níže). Backfill přes
+`search-terms-report` byl proto pro `ownBrand`/`competitors` funkčně no-op —
+**implementováno v kódu**: `extract_snapshots_and_texts()` při `force=True`
+(backfill) `brand_snapshots` vůbec nestahuje ani nezapisuje, jen
+`answer_texts`, kde `isoStartDate`/`isoEndDate` reálně funguje.
 
 ## Použití v kódu
 
@@ -202,23 +198,27 @@ Poznámky ke struktuře:
 ## Zápis do BigQuery
 
 `raw_brand_snapshots` a `raw_answer_texts` (`src/schema_raw.sql`) — viz
-`extract_snapshots_and_texts()`. Denní run: skip-if-no-new-data přes
-`bq_max_snapshot()`. Backfill: `force=True`, vždy zapíše — **ale vzhledem k
-výše popsanému chování API se tím jen duplikuje ten samý aktuální snapshot**,
-ne získává historie.
+`extract_snapshots_and_texts()`. Denní run (`force=False`): skip-if-no-new-data
+přes `bq_max_snapshot()`, zapisuje `brand_snapshots` i `answer_texts`.
+Backfill (`force=True`): **`brand_snapshots` se vůbec nestahuje ani nezapisuje**
+(bylo by jen opakované duplicitní zapsání aktuálního snapshotu, viz sekce
+výše) — zapisuje se jen `answer_texts`, u kterého `isoStartDate`/`isoEndDate`
+skutečně funguje (viz gotcha níže).
 
 ## Známé chování / gotchas
 
-- **Backfill přes tenhle endpoint pro `ownBrand`/`competitors` metriky
-  nefunguje** — viz sekce výše. Potvrzeno jak oficiální dokumentací, tak
-  empirickým testem.
-- `isoStartDate`/`isoEndDate` ovlivňuje jen `answerTexts` — takže backfill
-  `answerTexts` (na rozdíl od `brand_snapshots`) může dávat smysl, pokud API
-  skutečně vrací historické `executedAt` časy pro starší okna (nebylo zatím
-  ověřeno samostatně, jen odvozeno z dokumentace).
+- **Backfill `ownBrand`/`competitors` metrik (`brand_snapshots`) nefunguje a
+  kód se o něj při `force=True` už ani nesnaží** — potvrzeno oficiální
+  dokumentací i empirickým testem (dvě volání, aktuální týden vs. 20 týdnů
+  zpátky, identické `lastSnapshotAt` v obou).
+- **`isoStartDate`/`isoEndDate` u `answerTexts` naopak funguje — ověřeno.**
+  Test: stejný brand, `includeAnswerTexts: true`, okno "aktuální týden" vs.
+  okno "20 týdnů zpátky" (2026-04-20 – 2026-04-26). Výsledek: `recent` vrátilo
+  227 textů s `executedAt` v září 2026, `old` vrátilo 254 textů s `executedAt`
+  **2026-04-21** — přesně v požadovaném starším okně. Backfill `answer_texts`
+  má tedy smysl a kód ho dělá (viz `extract_snapshots_and_texts()`).
 - `selectedTopic` přijímá i neplatné hodnoty bez chyby — jen je nahlásí přes
   `warnings[]`. Kód posílá `"all"`, takže se ho tohle netýká, ale při budoucí
   úpravě (např. filtrování podle topicu) na to pamatovat.
-- Pro skutečný historický backfill metrik existuje `/v1/metrics/report` —
-  **zatím nezdokumentováno**, další krok až budeme chtít backfill řešit
-  pořádně.
+- Pro skutečný historický backfill metrik existuje `/v1/metrics/report`, ale
+  jen pro vlastní brand, ne konkurenty — viz [report.md](report.md).
