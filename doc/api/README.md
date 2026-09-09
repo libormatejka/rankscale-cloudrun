@@ -18,6 +18,7 @@ nefiltruje — [search-terms-report.md](search-terms-report.md)).
 | `/v1/metrics/search-terms` | GET | `extract_search_terms()` | [search-terms.md](search-terms.md) |
 | `/v1/metrics/search-terms-report` | POST | `extract_snapshots_and_texts()` | [search-terms-report.md](search-terms-report.md) — ⚠️ nevrací historii metrik, viz dokument |
 | `/v1/metrics/citations` | POST | `extract_citations()` | *TODO* |
+| `/v1/metrics/report` | POST | **nepoužívá se** — kandidát na historický backfill vlastního brandu | [report.md](report.md) — ✅ historie existuje, ale jen pro `ownBrandMetrics`, ne pro konkurenty |
 
 ## Jak dokumentaci doplňovat
 
