@@ -63,9 +63,19 @@ one to change:
 
 ## Data flow and run modes
 
-- `extract_brands` → `extract_search_terms` → per-brand loop of
-  `extract_snapshots_and_texts` (+ `extract_citations`, current week only — the API
-  has no historical backfill for citations).
+- `extract_brands` → `extract_search_terms` → `extract_topic_metrics_history`
+  → per-brand loop of `extract_snapshots_and_texts` (+ `extract_citations`,
+  current week only — the API has no historical backfill for citations).
+- `extract_topic_metrics_history` runs on every invocation (daily or
+  backfill) — it fetches `POST /v1/metrics/report` once per (brand, topic)
+  pair with `selectedTopic=<topic_id>` (topics come from `operationalTopics`
+  in the `extract_brands` response) and `aggregation=weekly`, covering
+  `TOPIC_METRICS_START_DATE` through today. Unlike `search-terms-report`,
+  `/report` genuinely returns historical time series for both the own brand
+  (`ownBrandMetrics.historicalData`) and competitors
+  (`competitorTimeSeriesData`) — but only when scoped to one topic at a time;
+  `selectedTopic: "all"` returns different (aggregate, not comparable) data.
+  See `doc/api/report.md` for how this was confirmed.
 - **Daily run** (default): only the current week (Mon–Sun). Before writing
   `raw_brand_snapshots`, `bq_max_snapshot()` checks BigQuery's existing max
   `last_snapshot_at` for that brand and skips the write if the API has nothing newer
@@ -109,10 +119,16 @@ the "something failed" trigger.
 
 ## BigQuery write pattern
 
-All writes go through `bq_append()` (NDJSON → `load_table_from_file`, `WRITE_APPEND`).
-There is no dedup/merge logic anywhere — every table is append-only, including
-`etl_runs`. Table names for the `raw_*` tables come from `tbl(name)` which prefixes
-`raw_`; `etl_runs` is referenced by its full name directly since it isn't a `raw_*`
+All writes go through `bq_append()` (NDJSON → `load_table_from_file`), default
+`WRITE_APPEND`. There is no dedup/merge logic anywhere — every table is
+append-only, **except `topic_metrics_history`**, which `extract_topic_metrics_history()`
+writes with `write_disposition=WRITE_TRUNCATE` (passed explicitly to
+`bq_append()`) — deliberate: `/v1/metrics/report` returns the complete history
+window fresh on every call, so appending would duplicate every week on every
+run. Keep that override in mind if you touch `bq_append()`'s signature.
+Table names for the `raw_*` tables come from `tbl(name)` which prefixes
+`raw_`; `etl_runs` and `topic_metrics_history` are referenced by their full
+names directly since neither is a `raw_*`
 mirror table. Schema changes go in `src/schema_raw.sql` (all `CREATE TABLE IF NOT
 EXISTS`, safe to re-run against a live dataset) and must stay project-ID-agnostic —
 the project is supplied externally via `bq query --project_id=...`, not hardcoded

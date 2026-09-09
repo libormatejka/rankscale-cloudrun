@@ -26,6 +26,7 @@ Scheduleru**.
 - [6. Denní spouštění přes Cloud Scheduler](#6-denní-spouštění-přes-cloud-scheduler)
 - [7. Aktualizace image po změně kódu](#7-aktualizace-image-po-změně-kódu)
 - [8. E-mailová notifikace při selhání](#8-e-mailová-notifikace-při-selhání)
+- [Historie metrik po topicu (`topic_metrics_history`)](#historie-metrik-po-topicu-topic_metrics_history)
 - [Monitoring a logy](#monitoring-a-logy)
 - [Smazání dat (truncate)](#smazání-dat-truncate)
 - [Troubleshooting](#troubleshooting)
@@ -49,7 +50,7 @@ Scheduleru**.
 | `src/.dockerignore` | vynechá `env.yaml`/`schema_raw.sql` z Docker build kontextu (do image se stejně kopírují jen `requirements.txt` + skript) |
 | `src/requirements.txt` | Python závislosti (subset — bez `google-auth`, ten už táhne `google-cloud-bigquery`) |
 | `src/env.yaml` | cílový `GCP_PROJECT` + `BQ_DATASET` pro Cloud Run Job (viz krok 5) |
-| `src/schema_raw.sql` | DDL pro `raw_*` tabulky + `etl_runs` (run log), bez natvrdo zapsaného project ID (viz krok 3b) |
+| `src/schema_raw.sql` | DDL pro `raw_*` tabulky + `etl_runs` (run log) + `topic_metrics_history` (týdenní historie), bez natvrdo zapsaného project ID (viz krok 3b) |
 
 `src/` je vše, co se nasazuje do GCP (image + jeho build inputy). `doc/` jsou
 podpůrné dokumenty, které se nikam nenasazují.
@@ -400,6 +401,32 @@ buď v Cloud Loggingu (viz níže), nebo v tabulce `etl_runs` (viz krok o
 run logu výše — sloupec `error_message`).
 
 ---
+
+## Historie metrik po topicu (`topic_metrics_history`)
+
+Týdenní historie `visibility_score`/`sentiment` (+ `avg_position`,
+`detection_rate`, `top3`, `mentions`, `citations`) pro **vlastní brand i
+konkurenty**, rozdělená po topicu — zdroj pro grafy typu "Brand Performance
+Over Time" z Rankscale UI. Plní `extract_topic_metrics_history()`, voláno při
+každém běhu (denním i backfillu), okno `TOPIC_METRICS_START_DATE`
+(natvrdo `2026-05-11` — odkud v Rankscale reálně existují data) až dnešek.
+
+**Na rozdíl od ostatních tabulek se přepisuje celá** (`TRUNCATE`, ne
+`WRITE_APPEND`) při každém běhu — `POST /v1/metrics/report` s
+`selectedTopic` vrací pokaždé kompletní okno historie znovu, ne jen nová
+data, takže append by jen duplikoval týdny. Detaily a jak jsme na tenhle
+přístup přišli: [doc/api/report.md](doc/api/report.md).
+
+```sql
+SELECT topic_name, entity_name, is_own_brand, week_start, visibility_score, sentiment
+FROM `RankScaleDashboard.topic_metrics_history`
+WHERE topic_id = 'ZFyMrgG0cuuEAvCdf1nr'
+ORDER BY week_start
+```
+
+Obsahuje i souhrnný řádek `entity_name = "Others"` (menší/nesledovaní
+konkurenti) — v Rankscale UI se nezobrazuje, při čtení případně vyfiltruj
+(`WHERE entity_name != 'Others'`).
 
 ## Monitoring a logy
 

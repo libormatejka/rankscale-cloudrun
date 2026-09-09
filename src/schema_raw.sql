@@ -136,3 +136,34 @@ CREATE TABLE IF NOT EXISTS `RankScaleDashboard.etl_runs`
   error_message  STRING,     -- NULL pokud status = "success"
   etl_loaded_at  TIMESTAMP
 );
+
+
+-- ------------------------------------------------------------
+-- topic_metrics_history
+-- Metadata tabulka (ne 1:1 mirror API, ne append-only) — týdenní historie
+-- visibility/sentiment (+ pár dalších metrik) pro vlastní brand i konkurenty,
+-- rozdělená po topicu.
+-- Zdroj: POST /v1/metrics/report, volané zvlášť pro každou (brand, topic)
+-- dvojici se selectedTopic=<topic_id> a aggregation=weekly — viz
+-- doc/api/report.md.
+-- Na rozdíl od ostatních tabulek se PŘEPISUJE CELÁ (TRUNCATE) při každém
+-- běhu extract_topic_metrics_history() — API vrací pokaždé kompletní okno
+-- historie znovu, ne jen nová data, takže append by jen duplikoval týdny.
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `RankScaleDashboard.topic_metrics_history`
+(
+  brand_id         STRING,
+  topic_id         STRING,
+  topic_name       STRING,
+  entity_name      STRING,   -- jméno vlastního brandu nebo konkurenta (vč. "Others")
+  is_own_brand     BOOL,
+  week_start       TIMESTAMP,
+  visibility_score FLOAT64,
+  sentiment        FLOAT64,
+  avg_position     FLOAT64,
+  detection_rate   FLOAT64,
+  top3             FLOAT64,
+  mentions         INT64,
+  citations        INT64,
+  etl_loaded_at    TIMESTAMP
+);

@@ -38,6 +38,10 @@ BQ_DATASET     = os.environ["BQ_DATASET"]
 BACKFILL_WEEKS = int(os.environ["BACKFILL_WEEKS"]) if os.environ.get("BACKFILL_WEEKS") else None
 RATE_SLEEP     = 0.5
 
+# Odkud sahá historie topic_metrics_history — reálná data v Rankscale existují
+# až od poloviny května 2026, dřívější datum by jen vracelo prázdné řádky.
+TOPIC_METRICS_START_DATE = "2026-05-11"
+
 NOW    = datetime.now(UTC).isoformat()
 RUN_ID = str(uuid.uuid4())
 
@@ -64,7 +68,12 @@ def tbl(name: str) -> str:
     return f"{GCP_PROJECT}.{BQ_DATASET}.raw_{name}"
 
 
-def bq_append(client: bigquery.Client, table: str, rows: list[dict]) -> None:
+def bq_append(
+    client: bigquery.Client,
+    table: str,
+    rows: list[dict],
+    write_disposition: str = bigquery.WriteDisposition.WRITE_APPEND,
+) -> None:
     if not rows:
         log.info(f"    → {table.split('.')[-1]}: 0 řádků, přeskakuji")
         return
@@ -72,7 +81,7 @@ def bq_append(client: bigquery.Client, table: str, rows: list[dict]) -> None:
         row["etl_loaded_at"] = NOW
     ndjson = "\n".join(json.dumps(r, ensure_ascii=False, default=str) for r in rows)
     cfg = bigquery.LoadJobConfig(
-        write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+        write_disposition=write_disposition,
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         autodetect=False,
     )
@@ -170,7 +179,10 @@ def api_post(path: str, body: dict) -> dict:
 
 
 # ── Extract kroky ──────────────────────────────────────────────────────────────
-def extract_brands(client: bigquery.Client) -> list[str]:
+def extract_brands(client: bigquery.Client) -> tuple[list[str], dict[str, list[tuple[str, str]]]]:
+    """Vrátí (brand_ids, topics_by_brand) — topics_by_brand mapuje brand_id na
+    [(topic_id, topic_name), ...] z operationalTopics, potřebné pro
+    extract_topic_metrics_history()."""
     log.info("── brands")
     data   = api_get("/v1/metrics/brands", {"limit": 1000})
     brands = data["data"]["brands"]
@@ -185,8 +197,12 @@ def extract_brands(client: bigquery.Client) -> list[str]:
     ]
     bq_append(client, tbl("brands"), rows)
     ids = [b["id"] for b in brands]
+    topics_by_brand = {
+        b["id"]: [(t["topicId"], t["name"]) for t in b.get("operationalTopics", [])]
+        for b in brands
+    }
     log.info(f"    {len(ids)} brand(ů): {ids}")
-    return ids
+    return ids, topics_by_brand
 
 
 def extract_search_terms(client: bigquery.Client, brand_ids: list[str]) -> None:
@@ -388,6 +404,101 @@ def extract_citations(client: bigquery.Client, brand_id: str) -> None:
     bq_append(client, tbl("citations"), rows)
 
 
+def _topic_metric_rows(
+    brand_id: str,
+    topic_id: str,
+    topic_name: str,
+    entity_name: str,
+    is_own_brand: bool,
+    series: dict,
+) -> list[dict]:
+    """Rozbalí jednu 'weekly' časovou řadu (ownBrandMetrics.historicalData.weekly
+    nebo competitorTimeSeriesData.weekly.competitors[].metrics + společné
+    timestamps) na řádky, jeden per týden. Pole se defenzivně indexují —
+    v odpovědi API nemají všechny metriky nutně stejnou délku jako timestamps
+    (viz doc/api/report.md)."""
+    timestamps = series.get("timestamps", [])
+
+    def at(key: str, i: int):
+        values = series.get(key, [])
+        return values[i] if i < len(values) else None
+
+    return [
+        {
+            "brand_id":        brand_id,
+            "topic_id":        topic_id,
+            "topic_name":      topic_name,
+            "entity_name":     entity_name,
+            "is_own_brand":    is_own_brand,
+            "week_start":      ts,
+            "visibility_score": at("visibilityScore", i),
+            "sentiment":       at("sentiment", i),
+            "avg_position":    at("avgPosition", i),
+            "detection_rate":  at("detectionRate", i),
+            "top3":            at("top3", i),
+            "mentions":        at("mentions", i),
+            "citations":       at("citations", i),
+        }
+        for i, ts in enumerate(timestamps)
+    ]
+
+
+def extract_topic_metrics_history(
+    client: bigquery.Client,
+    topics_by_brand: dict[str, list[tuple[str, str]]],
+    iso_start: str,
+    iso_end: str,
+) -> None:
+    """Týdenní historie visibility/sentiment (+ pár dalších metrik) pro vlastní
+    brand i konkurenty, rozdělená po topicu. Na rozdíl od ostatních tabulek se
+    přepisuje celá (TRUNCATE) při každém běhu — POST /v1/metrics/report s
+    'selectedTopic' vrací pokaždé kompletní okno historie znovu, ne jen nová
+    data, takže WRITE_APPEND by jen duplikoval stejné týdny (viz
+    doc/api/report.md). Musí se volat zvlášť per topic — 'selectedTopic: all'
+    vrací jinou (nesprávnou, souhrnnou) historii pro konkurenty.
+    """
+    log.info("── topic_metrics_history")
+    rows: list[dict] = []
+    for brand_id, topics in topics_by_brand.items():
+        for topic_id, topic_name in topics:
+            try:
+                data = api_post("/v1/metrics/report", {
+                    "brandId":       brand_id,
+                    "aggregation":   "weekly",
+                    "selectedTopic": topic_id,
+                    "isoStartDate":  iso_start,
+                    "isoEndDate":    iso_end,
+                })
+            except Exception as e:
+                log.error(f"    {brand_id}/{topic_name}: selhalo — {e}")
+                continue
+
+            d = data["data"]
+            own = d["ownBrandMetrics"]
+            rows += _topic_metric_rows(
+                brand_id, topic_id, topic_name, own["name"], True,
+                own["historicalData"]["weekly"],
+            )
+
+            comp_series = d["competitorTimeSeriesData"]["weekly"]
+            comp_timestamps = comp_series.get("timestamps", [])
+            for comp in comp_series.get("competitors", []):
+                rows += _topic_metric_rows(
+                    brand_id, topic_id, topic_name, comp["name"], False,
+                    {"timestamps": comp_timestamps, **comp["metrics"]},
+                )
+
+            log.info(f"    {brand_id}/{topic_name}: {len(comp_series.get('competitors', []))} konkurentů")
+            time.sleep(RATE_SLEEP)
+
+    bq_append(
+        client,
+        f"{GCP_PROJECT}.{BQ_DATASET}.topic_metrics_history",
+        rows,
+        write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE,
+    )
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main() -> None:
     mode = f"BACKFILL {BACKFILL_WEEKS} týdnů" if BACKFILL_WEEKS else "denní run"
@@ -400,8 +511,13 @@ def main() -> None:
     brand_ids: list[str] = []
 
     try:
-        brand_ids = extract_brands(client)
+        brand_ids, topics_by_brand = extract_brands(client)
         extract_search_terms(client, brand_ids)
+        extract_topic_metrics_history(
+            client, topics_by_brand,
+            iso_start=TOPIC_METRICS_START_DATE,
+            iso_end=date.today().isoformat(),
+        )
 
         # Backfill: N týdnů zpět s explicitními date ranges (pondělí–neděle)
         # Denní run: jen aktuální týden
