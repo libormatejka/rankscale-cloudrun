@@ -1,10 +1,14 @@
 # Vyžaduje pro deploy-* / execute / backfill: GCP_PROJECT, REGION, REPO
 # (viz README, krok 1) — exportované v shellu, ne natvrdo tady.
-IMAGE ?= $(REGION)-docker.pkg.dev/$(GCP_PROJECT)/$(REPO)/rankscale-extract:latest
-JOB   := rankscale-extract
-WEEKS ?= 52
+IMAGE      ?= $(REGION)-docker.pkg.dev/$(GCP_PROJECT)/$(REPO)/rankscale-extract:latest
+JOB        := rankscale-extract
+WEEKS      ?= 52
+BQ_DATASET ?= RankScaleDashboard
 
-.PHONY: help lint build run deploy deploy-build deploy-update execute backfill check-env
+# Musí sedět s CREATE TABLE příkazy v src/schema_raw.sql.
+TABLES := raw_brands raw_search_terms raw_brand_snapshots raw_answer_texts raw_citations etl_runs
+
+.PHONY: help lint build run deploy deploy-build deploy-update execute backfill check-env truncate-tables
 
 .DEFAULT_GOAL := help
 
@@ -44,3 +48,8 @@ execute: check-env ## Ruční spuštění jobu (README krok 5, "Ruční spuště
 backfill: check-env ## Backfill — WEEKS=N make backfill (default 52, README krok 5, "Backfill")
 	gcloud run jobs execute $(JOB) --project=$(GCP_PROJECT) --region=$(REGION) \
 		--update-env-vars="BACKFILL_WEEKS=$(WEEKS)"
+
+truncate-tables: check-env ## NEVRATNĚ smaže VŠECHNA data ve všech tabulkách — nutné CONFIRM=yes
+	@test "$(CONFIRM)" = "yes" || (echo "Smaže VŠECHNA data v $(GCP_PROJECT).$(BQ_DATASET) ($(TABLES)). Spusť: make truncate-tables CONFIRM=yes"; exit 1)
+	@for t in $(TABLES); do echo "TRUNCATE TABLE \`$(GCP_PROJECT).$(BQ_DATASET).$$t\`;"; done \
+		| bq query --project_id=$(GCP_PROJECT) --use_legacy_sql=false

@@ -27,6 +27,7 @@ Scheduleru**.
 - [7. Aktualizace image po změně kódu](#7-aktualizace-image-po-změně-kódu)
 - [8. E-mailová notifikace při selhání](#8-e-mailová-notifikace-při-selhání)
 - [Monitoring a logy](#monitoring-a-logy)
+- [Smazání dat (truncate)](#smazání-dat-truncate)
 - [Troubleshooting](#troubleshooting)
 - [Lint](#lint)
 - [Lokální test image](#lokální-test-image)
@@ -407,6 +408,18 @@ run logu výše — sloupec `error_message`).
 - Neúspěšný brand (chyba API/BQ) se loguje, ale extract pokračuje na dalších brandech;
   pokud selhal **alespoň jeden**, celý job skončí s `exit(1)` → execution je označená
   **Failed** a spustí e-mailový alert z kroku 8.
+
+## Smazání dat (truncate)
+
+**Nevratně** smaže všechna data ve všech tabulkách (`raw_*` i `etl_runs`), schéma
+zůstává — pro znovunahrání dat od nuly (např. po chybném backfillu):
+
+```bash
+make truncate-tables CONFIRM=yes
+```
+
+Bez `CONFIRM=yes` cíl skončí chybou a nic nesmaže — je to schválně, ať se nedá
+spustit omylem.
 
 ## Troubleshooting
 
