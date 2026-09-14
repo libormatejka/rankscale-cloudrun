@@ -46,6 +46,7 @@ spouštěný z **Cloud Scheduleru**.
 | `requirements-dev.txt` | vývojářské závislosti (jen `ruff`, do image se nekopírují) |
 | `doc/SECURITY_CHECKLIST.md` | bezpečnostní review nasazení, otevřené položky k řešení |
 | `doc/API_KEY_ROTATION.md` | postup výměny `RANKSCALE_API_KEY` v Secret Manageru |
+| `doc/DEPLOY_NEW_PROJECT.md` | stručný checklist pro nasazení do nového GCP projektu (zkrácená verze tohoto návodu) |
 | `src/rankscale_extract_gcp.py` | samotný extract skript |
 | `src/Dockerfile` | image pro Cloud Run Job |
 | `src/.dockerignore` | vynechá `env.yaml`/`schema_raw.sql` z Docker build kontextu (do image se stejně kopírují jen `requirements.txt` + skript) |
