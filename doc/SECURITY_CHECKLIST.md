@@ -24,7 +24,7 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       image nasazen a otestován (`rankscale-extract-q67hv`, `Completed: True`).
 
 - [x] **Výchozí Compute service account má `roles/editor` na projektu `rankscale`**
-      (`968813943604-compute@developer.gserviceaccount.com`). Tenhle SA reálně
+      (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`). Tenhle SA reálně
       používá Cloud Build při každém `gcloud builds submit` — kompromitovaný
       build/závislost = Editor práva na celém projektu.
       **Fix:** odebrat `roles/editor`, ponechat jen `roles/cloudbuild.builds.builder`
@@ -91,7 +91,7 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       to nikdo neviděl".
 
 - [ ] **`roles/owner` na jednom osobním účtu bez separace rolí**
-      `jsem@libor-matejka.cz` má Owner na obou projektech a dělá vývoj, deploy
+      Osobní účet má Owner na obou projektech a dělá vývoj, deploy
       i IAM správu — single point of failure, no separation of duties.
       **Fix:** v korporátním provozu rozdělit na least-privilege role
       (deployer / data steward / security admin) podle potřeby.
