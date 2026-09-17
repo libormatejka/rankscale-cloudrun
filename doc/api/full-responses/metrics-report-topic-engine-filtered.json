@@ -1,0 +1,2132 @@
+{
+    "success": true,
+    "data": {
+        "ownBrandMetrics": {
+            "name": "Česká spořitelna (Test)",
+            "aliases": [
+                "Spořka",
+                "Česká spořitelna"
+            ],
+            "visibilityScore": 56,
+            "sentiment": 67.3,
+            "mentions": 133,
+            "sources": 32,
+            "citations": 93,
+            "avgPosition": 2.7,
+            "detectionRate": 64.5,
+            "top3": 45.2,
+            "validMetricsCount": 5,
+            "executionsAnalyzed": 207,
+            "trends": {
+                "visibilityScore": -4.8,
+                "sentiment": 1.9,
+                "mentions": -11,
+                "sources": -1,
+                "citations": 1,
+                "avgPosition": -0.1,
+                "detectionRate": -6,
+                "top3": -2.5,
+                "executionsAnalyzed": -13
+            },
+            "historicalData": {
+                "hourly": {
+                    "visibilityScore": [],
+                    "sentiment": [],
+                    "mentions": [],
+                    "sources": [],
+                    "citations": [],
+                    "citationCounts": [],
+                    "avgPosition": [],
+                    "detectionRate": [],
+                    "top3": [],
+                    "executionsAnalyzed": [],
+                    "timestamps": [],
+                    "brandNotFound": []
+                },
+                "daily": {
+                    "visibilityScore": [],
+                    "sentiment": [],
+                    "mentions": [],
+                    "sources": [],
+                    "citations": [],
+                    "citationCounts": [],
+                    "avgPosition": [],
+                    "detectionRate": [],
+                    "top3": [],
+                    "executionsAnalyzed": [],
+                    "timestamps": [],
+                    "brandNotFound": []
+                },
+                "weekly": {
+                    "visibilityScore": [
+                        50.4,
+                        50.7,
+                        58.6,
+                        60.8,
+                        56
+                    ],
+                    "sentiment": [
+                        64.5,
+                        65.8,
+                        61.5,
+                        65.4,
+                        67.3
+                    ],
+                    "mentions": [
+                        26,
+                        26,
+                        30,
+                        31,
+                        20
+                    ],
+                    "sources": [
+                        11,
+                        7,
+                        5,
+                        5,
+                        4
+                    ],
+                    "citations": [
+                        34,
+                        21,
+                        15,
+                        11,
+                        12
+                    ],
+                    "citationCounts": [
+                        34,
+                        21,
+                        15,
+                        11,
+                        12
+                    ],
+                    "avgPosition": [
+                        2.9,
+                        2.9,
+                        2.9,
+                        2.8,
+                        2.7
+                    ],
+                    "detectionRate": [
+                        59.1,
+                        59.1,
+                        68.2,
+                        70.5,
+                        64.5
+                    ],
+                    "top3": [
+                        31.8,
+                        43.2,
+                        40.9,
+                        47.7,
+                        45.2
+                    ],
+                    "executionsAnalyzed": [
+                        44,
+                        44,
+                        44,
+                        44,
+                        31
+                    ],
+                    "timestamps": [
+                        "2026-06-01T00:00:00.000Z",
+                        "2026-06-08T00:00:00.000Z",
+                        "2026-06-15T00:00:00.000Z",
+                        "2026-06-22T00:00:00.000Z",
+                        "2026-06-29T00:00:00.000Z"
+                    ],
+                    "brandNotFound": [
+                        true,
+                        true,
+                        true,
+                        true,
+                        true
+                    ]
+                },
+                "monthly": {
+                    "visibilityScore": [],
+                    "sentiment": [],
+                    "mentions": [],
+                    "sources": [],
+                    "citations": [],
+                    "citationCounts": [],
+                    "avgPosition": [],
+                    "detectionRate": [],
+                    "top3": [],
+                    "executionsAnalyzed": [],
+                    "timestamps": [],
+                    "brandNotFound": []
+                }
+            },
+            "topicMetricsData": {
+                "hourly": [],
+                "daily": [],
+                "weekly": [
+                    {
+                        "topicId": "ZFyMrgG0cuuEAvCdf1nr",
+                        "topicName": "Brand",
+                        "visibilityScore": [
+                            50.4,
+                            50.7,
+                            58.6,
+                            60.8,
+                            56
+                        ],
+                        "sentiment": [
+                            64.5,
+                            65.8,
+                            61.5,
+                            65.4,
+                            67.3
+                        ],
+                        "avgPosition": [
+                            2.9,
+                            2.9,
+                            2.9,
+                            2.8,
+                            2.7
+                        ],
+                        "detectionRate": [
+                            59.1,
+                            59.1,
+                            68.2,
+                            70.5,
+                            64.5
+                        ],
+                        "top3": [
+                            31.8,
+                            43.2,
+                            40.9,
+                            47.7,
+                            45.2
+                        ],
+                        "mentions": [
+                            26,
+                            26,
+                            30,
+                            31,
+                            20
+                        ],
+                        "sources": [
+                            11,
+                            7,
+                            5,
+                            5,
+                            4
+                        ],
+                        "citations": [
+                            34,
+                            21,
+                            15,
+                            11,
+                            12
+                        ],
+                        "executionsAnalyzed": [
+                            44,
+                            44,
+                            44,
+                            44,
+                            31
+                        ],
+                        "timestamps": [
+                            "2026-06-01T00:00:00.000Z",
+                            "2026-06-08T00:00:00.000Z",
+                            "2026-06-15T00:00:00.000Z",
+                            "2026-06-22T00:00:00.000Z",
+                            "2026-06-29T00:00:00.000Z"
+                        ],
+                        "brandNotFound": [
+                            true,
+                            true,
+                            true,
+                            true,
+                            true
+                        ]
+                    }
+                ],
+                "monthly": []
+            },
+            "engineMetricsData": {
+                "hourly": [],
+                "daily": [],
+                "weekly": [
+                    {
+                        "engineId": "chatgpt_gui",
+                        "engineName": "chatgpt_gui",
+                        "visibilityScore": [
+                            50.4,
+                            50.7,
+                            58.6,
+                            60.8,
+                            56
+                        ],
+                        "sentiment": [
+                            64.5,
+                            65.8,
+                            61.5,
+                            65.4,
+                            67.3
+                        ],
+                        "avgPosition": [
+                            2.9,
+                            2.9,
+                            2.9,
+                            2.8,
+                            2.7
+                        ],
+                        "detectionRate": [
+                            59.1,
+                            59.1,
+                            68.2,
+                            70.5,
+                            64.5
+                        ],
+                        "top3": [
+                            31.8,
+                            43.2,
+                            40.9,
+                            47.7,
+                            45.2
+                        ],
+                        "mentions": [
+                            26,
+                            26,
+                            30,
+                            31,
+                            20
+                        ],
+                        "sources": [
+                            11,
+                            7,
+                            5,
+                            5,
+                            4
+                        ],
+                        "citations": [
+                            34,
+                            21,
+                            15,
+                            11,
+                            12
+                        ],
+                        "executionsAnalyzed": [
+                            44,
+                            44,
+                            44,
+                            44,
+                            31
+                        ],
+                        "timestamps": [
+                            "2026-06-01T00:00:00.000Z",
+                            "2026-06-08T00:00:00.000Z",
+                            "2026-06-15T00:00:00.000Z",
+                            "2026-06-22T00:00:00.000Z",
+                            "2026-06-29T00:00:00.000Z"
+                        ],
+                        "brandNotFound": [
+                            true,
+                            true,
+                            true,
+                            true,
+                            true
+                        ]
+                    }
+                ],
+                "monthly": []
+            },
+            "preselectionWhitelist": [
+                "Air Bank",
+                "Raiffeisenbank",
+                "CSOB",
+                "Fio banka",
+                "Komercni banka",
+                "mBank",
+                "MONETA Money Bank",
+                "Moneta Money Bank",
+                "UniCredit Bank",
+                "Partners Banka",
+                "Revolut",
+                "Wise",
+                "UniCredit Bank Czech Republic and Slovakia",
+                "KB",
+                "Banka Creditas",
+                "MONETA",
+                "Ally Bank",
+                "Trinity Bank",
+                "Chase",
+                "Equa bank",
+                "ING",
+                "UniCredit Bank Czech Republic",
+                "Hypo na miru",
+                "Moneta",
+                "Zonky",
+                "Banka CREDITAS",
+                "Hypotecni banka"
+            ],
+            "preselectionBlacklist": [],
+            "manualWhitelist": [],
+            "manualBlacklist": []
+        },
+        "competitorMetrics": [
+            {
+                "name": "Air Bank",
+                "isOwnBrand": false,
+                "latestValue": 70,
+                "trend": 6.5,
+                "variations": [
+                    "Air Bank"
+                ],
+                "visibilityScore": 70,
+                "latestRank": 1,
+                "benchmarkAvgPosition": 2.8,
+                "avgRank": 2.6,
+                "avgSentiment": 76,
+                "appearances": 154,
+                "citationCount": 134,
+                "detectionRate": 80.6,
+                "top3": 54.8,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Fio banka",
+                "isOwnBrand": false,
+                "latestValue": 52,
+                "trend": 13.3,
+                "variations": [
+                    "Fio banka",
+                    "Fio"
+                ],
+                "visibilityScore": 52,
+                "latestRank": 2,
+                "benchmarkAvgPosition": 4,
+                "avgRank": 3.5,
+                "avgSentiment": 75.5,
+                "appearances": 91,
+                "citationCount": 64,
+                "detectionRate": 64.5,
+                "top3": 35.5,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Česká spořitelna (Test)",
+                "isOwnBrand": true,
+                "latestValue": 56,
+                "trend": 0,
+                "variations": [
+                    "Česká spořitelna",
+                    "Česká spořitelna (Test)",
+                    "Spořitelna"
+                ],
+                "visibilityScore": 56,
+                "latestRank": 2.7,
+                "benchmarkAvgPosition": 2.7,
+                "avgRank": 2.8,
+                "avgSentiment": 67.3,
+                "appearances": 133,
+                "citationCount": 93,
+                "detectionRate": 64.5,
+                "top3": 45.2,
+                "validMetricsCount": 5,
+                "benchmarkObservationCount": 1
+            },
+            {
+                "name": "CSOB",
+                "isOwnBrand": false,
+                "latestValue": 47,
+                "trend": -5.8,
+                "variations": [
+                    "ČSOB"
+                ],
+                "visibilityScore": 47,
+                "latestRank": 4,
+                "benchmarkAvgPosition": 3.5,
+                "avgRank": 3.7,
+                "avgSentiment": 65.3,
+                "appearances": 120,
+                "citationCount": 60,
+                "detectionRate": 58.1,
+                "top3": 32.3,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Raiffeisenbank",
+                "isOwnBrand": false,
+                "latestValue": 49.6,
+                "trend": 1.5,
+                "variations": [
+                    "Raiffeisenbank"
+                ],
+                "visibilityScore": 49.6,
+                "latestRank": 5,
+                "benchmarkAvgPosition": 4.3,
+                "avgRank": 4.4,
+                "avgSentiment": 67.8,
+                "appearances": 125,
+                "citationCount": 81,
+                "detectionRate": 64.5,
+                "top3": 22.6,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Moneta Money Bank",
+                "isOwnBrand": false,
+                "latestValue": 47.1,
+                "trend": -0.7,
+                "variations": [
+                    "Moneta Money Bank",
+                    "MONETA Money Bank",
+                    "MONETA",
+                    "Moneta"
+                ],
+                "visibilityScore": 47.1,
+                "latestRank": 5,
+                "benchmarkAvgPosition": 3.6,
+                "avgRank": 3.6,
+                "avgSentiment": 71.1,
+                "appearances": 127,
+                "citationCount": 116,
+                "detectionRate": 58.1,
+                "top3": 32.3,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Komercni banka",
+                "isOwnBrand": false,
+                "latestValue": 35.4,
+                "trend": -14.6,
+                "variations": [
+                    "Komerční banka",
+                    "Komerční banka (KB)"
+                ],
+                "visibilityScore": 35.4,
+                "latestRank": 3,
+                "benchmarkAvgPosition": 4.1,
+                "avgRank": 3.8,
+                "avgSentiment": 63.6,
+                "appearances": 114,
+                "citationCount": 68,
+                "detectionRate": 45.2,
+                "top3": 19.4,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "mBank",
+                "isOwnBrand": false,
+                "latestValue": 45.8,
+                "trend": 5.7,
+                "variations": [
+                    "mBank"
+                ],
+                "visibilityScore": 45.8,
+                "latestRank": 7,
+                "benchmarkAvgPosition": 4,
+                "avgRank": 4.1,
+                "avgSentiment": 72.2,
+                "appearances": 112,
+                "citationCount": 94,
+                "detectionRate": 58.1,
+                "top3": 25.8,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Moneta",
+                "isOwnBrand": false,
+                "latestValue": 0,
+                "trend": -3.6,
+                "variations": [
+                    "Moneta",
+                    "Moneta Money Bank",
+                    "MONETA"
+                ],
+                "visibilityScore": 0,
+                "latestRank": 6,
+                "benchmarkAvgPosition": 0,
+                "avgRank": 4.4,
+                "avgSentiment": 0,
+                "appearances": 7,
+                "citationCount": 1,
+                "detectionRate": 0,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 3
+            },
+            {
+                "name": "UniCredit Bank",
+                "isOwnBrand": false,
+                "latestValue": 20.2,
+                "trend": 10.5,
+                "variations": [
+                    "UniCredit Bank"
+                ],
+                "visibilityScore": 20.2,
+                "latestRank": 7,
+                "benchmarkAvgPosition": 5.7,
+                "avgRank": 5.6,
+                "avgSentiment": 60,
+                "appearances": 40,
+                "citationCount": 33,
+                "detectionRate": 29,
+                "top3": 6.5,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Trinity Bank",
+                "isOwnBrand": false,
+                "latestValue": 3.2,
+                "trend": 1.3,
+                "variations": [
+                    "Trinity Bank"
+                ],
+                "visibilityScore": 3.2,
+                "latestRank": 1,
+                "benchmarkAvgPosition": 1,
+                "avgRank": 4.3,
+                "avgSentiment": 85,
+                "appearances": 12,
+                "citationCount": 9,
+                "detectionRate": 3.2,
+                "top3": 3.2,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Banka Creditas",
+                "isOwnBrand": false,
+                "latestValue": 5,
+                "trend": 1.9,
+                "variations": [
+                    "Banka Creditas",
+                    "Banka CREDITAS"
+                ],
+                "visibilityScore": 5,
+                "latestRank": 5,
+                "benchmarkAvgPosition": 4,
+                "avgRank": 5.3,
+                "avgSentiment": 85,
+                "appearances": 10,
+                "citationCount": 9,
+                "detectionRate": 6.5,
+                "top3": 3.2,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "UniCredit Bank Czech Republic and Slovakia",
+                "isOwnBrand": false,
+                "latestValue": 4.5,
+                "trend": 1.5,
+                "variations": [
+                    "UniCredit Bank Czech Republic and Slovakia"
+                ],
+                "visibilityScore": 4.5,
+                "latestRank": 7,
+                "benchmarkAvgPosition": 5.5,
+                "avgRank": 6.1,
+                "avgSentiment": 65,
+                "appearances": 8,
+                "citationCount": 2,
+                "detectionRate": 6.5,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 4
+            },
+            {
+                "name": "Zonky",
+                "isOwnBrand": false,
+                "latestValue": 2.9,
+                "trend": 1.7,
+                "variations": [
+                    "Zonky"
+                ],
+                "visibilityScore": 2.9,
+                "latestRank": 2,
+                "benchmarkAvgPosition": 2,
+                "avgRank": 3.2,
+                "avgSentiment": 80,
+                "appearances": 6,
+                "citationCount": 5,
+                "detectionRate": 3.2,
+                "top3": 3.2,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Partners Banka",
+                "isOwnBrand": false,
+                "latestValue": 6.2,
+                "trend": -3.2,
+                "variations": [
+                    "Partners Banka"
+                ],
+                "visibilityScore": 6.2,
+                "latestRank": 2,
+                "benchmarkAvgPosition": 1.5,
+                "avgRank": 3.3,
+                "avgSentiment": 85,
+                "appearances": 21,
+                "citationCount": 30,
+                "detectionRate": 6.5,
+                "top3": 6.5,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Equa bank",
+                "isOwnBrand": false,
+                "latestValue": 2.9,
+                "trend": 0.8,
+                "variations": [
+                    "Equa bank"
+                ],
+                "visibilityScore": 2.9,
+                "latestRank": 2,
+                "benchmarkAvgPosition": 2,
+                "avgRank": 2.8,
+                "avgSentiment": 50,
+                "appearances": 4,
+                "citationCount": 3,
+                "detectionRate": 3.2,
+                "top3": 3.2,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 4
+            },
+            {
+                "name": "Ally Bank",
+                "isOwnBrand": false,
+                "latestValue": 0,
+                "trend": -2.3,
+                "variations": [
+                    "Ally Bank"
+                ],
+                "visibilityScore": 0,
+                "latestRank": 1,
+                "benchmarkAvgPosition": 0,
+                "avgRank": 1,
+                "avgSentiment": 0,
+                "appearances": 1,
+                "citationCount": 2,
+                "detectionRate": 0,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 1
+            },
+            {
+                "name": "Chase",
+                "isOwnBrand": false,
+                "latestValue": 0,
+                "trend": -2.1,
+                "variations": [
+                    "Chase"
+                ],
+                "visibilityScore": 0,
+                "latestRank": 2,
+                "benchmarkAvgPosition": 0,
+                "avgRank": 2,
+                "avgSentiment": 0,
+                "appearances": 1,
+                "citationCount": 1,
+                "detectionRate": 0,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 1
+            },
+            {
+                "name": "ING",
+                "isOwnBrand": false,
+                "latestValue": 0,
+                "trend": -1.9,
+                "variations": [
+                    "ING"
+                ],
+                "visibilityScore": 0,
+                "latestRank": 3,
+                "benchmarkAvgPosition": 0,
+                "avgRank": 3,
+                "avgSentiment": 0,
+                "appearances": 1,
+                "citationCount": 1,
+                "detectionRate": 0,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 1
+            },
+            {
+                "name": "Revolut",
+                "isOwnBrand": false,
+                "latestValue": 7.1,
+                "trend": -3,
+                "variations": [
+                    "Revolut"
+                ],
+                "visibilityScore": 7.1,
+                "latestRank": 5,
+                "benchmarkAvgPosition": 4.7,
+                "avgRank": 3.2,
+                "avgSentiment": 73.3,
+                "appearances": 25,
+                "citationCount": 18,
+                "detectionRate": 9.7,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "Wise",
+                "isOwnBrand": false,
+                "latestValue": 4.3,
+                "trend": -5,
+                "variations": [
+                    "Wise"
+                ],
+                "visibilityScore": 4.3,
+                "latestRank": 6,
+                "benchmarkAvgPosition": 6,
+                "avgRank": 3.4,
+                "avgSentiment": 82.5,
+                "appearances": 21,
+                "citationCount": 23,
+                "detectionRate": 6.5,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 5
+            },
+            {
+                "name": "KB",
+                "isOwnBrand": false,
+                "latestValue": 0,
+                "trend": -7.4,
+                "variations": [
+                    "KB"
+                ],
+                "visibilityScore": 0,
+                "latestRank": 7,
+                "benchmarkAvgPosition": 0,
+                "avgRank": 7,
+                "avgSentiment": 0,
+                "appearances": 8,
+                "citationCount": 5,
+                "detectionRate": 0,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 3
+            },
+            {
+                "name": "UniCredit Bank Czech Republic",
+                "isOwnBrand": false,
+                "latestValue": 0,
+                "trend": -1.7,
+                "variations": [
+                    "UniCredit Bank Czech Republic"
+                ],
+                "visibilityScore": 0,
+                "latestRank": 4,
+                "benchmarkAvgPosition": 0,
+                "avgRank": 4,
+                "avgSentiment": 0,
+                "appearances": 1,
+                "citationCount": 1,
+                "detectionRate": 0,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 1
+            },
+            {
+                "name": "Hypo na miru",
+                "isOwnBrand": false,
+                "latestValue": 2.2,
+                "trend": 2.2,
+                "variations": [
+                    "Hypo na míru"
+                ],
+                "visibilityScore": 2.2,
+                "latestRank": 6,
+                "benchmarkAvgPosition": 6,
+                "avgRank": 7.5,
+                "avgSentiment": 80,
+                "appearances": 2,
+                "citationCount": 1,
+                "detectionRate": 3.2,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 2
+            },
+            {
+                "name": "Hypotecni banka",
+                "isOwnBrand": false,
+                "latestValue": 1.7,
+                "trend": 1.7,
+                "variations": [
+                    "Hypoteční banka"
+                ],
+                "visibilityScore": 1.7,
+                "latestRank": 10,
+                "benchmarkAvgPosition": 10,
+                "avgRank": 8.3,
+                "avgSentiment": 60,
+                "appearances": 3,
+                "citationCount": 3,
+                "detectionRate": 3.2,
+                "top3": 0,
+                "validMetricsCount": 31,
+                "benchmarkObservationCount": 3
+            }
+        ],
+        "competitorTimeSeriesData": {
+            "hourly": {
+                "timestamps": [],
+                "competitors": []
+            },
+            "daily": {
+                "timestamps": [],
+                "competitors": []
+            },
+            "weekly": {
+                "timestamps": [
+                    "2026-06-01T00:00:00.000Z",
+                    "2026-06-08T00:00:00.000Z",
+                    "2026-06-15T00:00:00.000Z",
+                    "2026-06-22T00:00:00.000Z",
+                    "2026-06-29T00:00:00.000Z"
+                ],
+                "competitors": [
+                    {
+                        "name": "Air Bank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Air Bank"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                63.9,
+                                61.8,
+                                70.2,
+                                63.5,
+                                70
+                            ],
+                            "sentiment": [
+                                73.8,
+                                76.9,
+                                77.1,
+                                76,
+                                76
+                            ],
+                            "avgPosition": [
+                                2.7,
+                                2.2,
+                                2.6,
+                                2.7,
+                                2.8
+                            ],
+                            "detectionRate": [
+                                72.7,
+                                68.2,
+                                79.5,
+                                72.7,
+                                80.6
+                            ],
+                            "top3": [
+                                52.3,
+                                54.5,
+                                59.1,
+                                50,
+                                54.8
+                            ],
+                            "mentions": [
+                                32,
+                                30,
+                                35,
+                                32,
+                                25
+                            ],
+                            "citations": [
+                                45,
+                                25,
+                                24,
+                                24,
+                                16
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Fio banka",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Fio banka",
+                            "Fio"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                31.4,
+                                26.7,
+                                37.5,
+                                38.7,
+                                52
+                            ],
+                            "sentiment": [
+                                70.1,
+                                72.9,
+                                72.8,
+                                74.2,
+                                75.5
+                            ],
+                            "avgPosition": [
+                                3.7,
+                                3.3,
+                                3.7,
+                                3.1,
+                                4
+                            ],
+                            "detectionRate": [
+                                38.6,
+                                31.8,
+                                45.5,
+                                45.5,
+                                64.5
+                            ],
+                            "top3": [
+                                22.7,
+                                15.9,
+                                25,
+                                29.5,
+                                35.5
+                            ],
+                            "mentions": [
+                                17,
+                                14,
+                                20,
+                                20,
+                                20
+                            ],
+                            "citations": [
+                                19,
+                                12,
+                                10,
+                                10,
+                                13
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Raiffeisenbank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Raiffeisenbank"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                41.9,
+                                40.4,
+                                50.9,
+                                48.1,
+                                49.6
+                            ],
+                            "sentiment": [
+                                66.5,
+                                66.4,
+                                64.3,
+                                65.6,
+                                67.8
+                            ],
+                            "avgPosition": [
+                                4.3,
+                                4.2,
+                                4.7,
+                                4.5,
+                                4.3
+                            ],
+                            "detectionRate": [
+                                54.5,
+                                52.3,
+                                68.2,
+                                63.6,
+                                64.5
+                            ],
+                            "top3": [
+                                18.2,
+                                15.9,
+                                15.9,
+                                18.2,
+                                22.6
+                            ],
+                            "mentions": [
+                                24,
+                                23,
+                                30,
+                                28,
+                                20
+                            ],
+                            "citations": [
+                                22,
+                                21,
+                                13,
+                                14,
+                                11
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Moneta Money Bank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Moneta Money Bank",
+                            "MONETA Money Bank",
+                            "MONETA",
+                            "Moneta"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                55.4,
+                                47.7,
+                                49.4,
+                                47.8,
+                                47.1
+                            ],
+                            "sentiment": [
+                                71.6,
+                                70.1,
+                                68.4,
+                                72.4,
+                                71.1
+                            ],
+                            "avgPosition": [
+                                3.1,
+                                3.6,
+                                4.1,
+                                3.5,
+                                3.6
+                            ],
+                            "detectionRate": [
+                                65.9,
+                                59.1,
+                                63.6,
+                                59.1,
+                                58.1
+                            ],
+                            "top3": [
+                                40.9,
+                                34.1,
+                                25,
+                                27.3,
+                                32.3
+                            ],
+                            "mentions": [
+                                29,
+                                26,
+                                28,
+                                26,
+                                18
+                            ],
+                            "citations": [
+                                34,
+                                28,
+                                17,
+                                27,
+                                10
+                            ]
+                        }
+                    },
+                    {
+                        "name": "CSOB",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "ČSOB"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                31.7,
+                                44.8,
+                                56.2,
+                                52.8,
+                                47
+                            ],
+                            "sentiment": [
+                                58.2,
+                                59.9,
+                                59.8,
+                                60.6,
+                                65.3
+                            ],
+                            "avgPosition": [
+                                3.4,
+                                4,
+                                3.7,
+                                3.8,
+                                3.5
+                            ],
+                            "detectionRate": [
+                                38.6,
+                                56.8,
+                                70.5,
+                                65.9,
+                                58.1
+                            ],
+                            "top3": [
+                                22.7,
+                                25,
+                                38.6,
+                                38.6,
+                                32.3
+                            ],
+                            "mentions": [
+                                17,
+                                25,
+                                31,
+                                29,
+                                18
+                            ],
+                            "citations": [
+                                18,
+                                13,
+                                12,
+                                12,
+                                5
+                            ]
+                        }
+                    },
+                    {
+                        "name": "mBank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "mBank"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                35.7,
+                                45.9,
+                                45.7,
+                                40.1,
+                                45.8
+                            ],
+                            "sentiment": [
+                                71.9,
+                                70.4,
+                                70.7,
+                                71.9,
+                                72.2
+                            ],
+                            "avgPosition": [
+                                4.1,
+                                3.8,
+                                4.2,
+                                4.3,
+                                4
+                            ],
+                            "detectionRate": [
+                                45.5,
+                                56.8,
+                                59.1,
+                                52.3,
+                                58.1
+                            ],
+                            "top3": [
+                                20.5,
+                                29.5,
+                                25,
+                                15.9,
+                                25.8
+                            ],
+                            "mentions": [
+                                20,
+                                25,
+                                26,
+                                23,
+                                18
+                            ],
+                            "citations": [
+                                30,
+                                25,
+                                14,
+                                13,
+                                12
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Komercni banka",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Komerční banka",
+                            "Komerční banka (KB)"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                34,
+                                44.9,
+                                52.9,
+                                50,
+                                35.4
+                            ],
+                            "sentiment": [
+                                62.3,
+                                59.9,
+                                57.8,
+                                58.1,
+                                63.6
+                            ],
+                            "avgPosition": [
+                                3.2,
+                                3.8,
+                                3.7,
+                                4,
+                                4.1
+                            ],
+                            "detectionRate": [
+                                40.9,
+                                56.8,
+                                65.9,
+                                63.6,
+                                45.2
+                            ],
+                            "top3": [
+                                25,
+                                29.5,
+                                36.4,
+                                31.8,
+                                19.4
+                            ],
+                            "mentions": [
+                                18,
+                                25,
+                                29,
+                                28,
+                                14
+                            ],
+                            "citations": [
+                                19,
+                                17,
+                                14,
+                                13,
+                                5
+                            ]
+                        }
+                    },
+                    {
+                        "name": "UniCredit Bank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "UniCredit Bank"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                20.9,
+                                8.6,
+                                10.5,
+                                9.7,
+                                20.2
+                            ],
+                            "sentiment": [
+                                51.3,
+                                56.7,
+                                52.9,
+                                53.7,
+                                60
+                            ],
+                            "avgPosition": [
+                                4.4,
+                                6.8,
+                                6.3,
+                                5.7,
+                                5.7
+                            ],
+                            "detectionRate": [
+                                27.3,
+                                13.6,
+                                15.9,
+                                13.6,
+                                29
+                            ],
+                            "top3": [
+                                13.6,
+                                0,
+                                0,
+                                4.5,
+                                6.5
+                            ],
+                            "mentions": [
+                                12,
+                                6,
+                                7,
+                                6,
+                                9
+                            ],
+                            "citations": [
+                                16,
+                                5,
+                                4,
+                                2,
+                                6
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Revolut",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Revolut"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                11,
+                                14,
+                                7.9,
+                                10.1,
+                                7.1
+                            ],
+                            "sentiment": [
+                                83.6,
+                                84,
+                                85,
+                                80.5,
+                                73.3
+                            ],
+                            "avgPosition": [
+                                1.4,
+                                2.7,
+                                2.8,
+                                5,
+                                4.7
+                            ],
+                            "detectionRate": [
+                                11.4,
+                                15.9,
+                                9.1,
+                                13.6,
+                                9.7
+                            ],
+                            "top3": [
+                                11.4,
+                                11.4,
+                                6.8,
+                                6.8,
+                                0
+                            ],
+                            "mentions": [
+                                5,
+                                7,
+                                4,
+                                6,
+                                3
+                            ],
+                            "citations": [
+                                6,
+                                5,
+                                2,
+                                4,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Partners Banka",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Partners Banka"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                9.1,
+                                10.6,
+                                5.9,
+                                9.4,
+                                6.2
+                            ],
+                            "sentiment": [
+                                78,
+                                80.8,
+                                81.7,
+                                82,
+                                85
+                            ],
+                            "avgPosition": [
+                                3.6,
+                                4,
+                                2.7,
+                                3.4,
+                                1.5
+                            ],
+                            "detectionRate": [
+                                11.4,
+                                13.6,
+                                6.8,
+                                11.4,
+                                6.5
+                            ],
+                            "top3": [
+                                4.5,
+                                4.5,
+                                4.5,
+                                4.5,
+                                6.5
+                            ],
+                            "mentions": [
+                                5,
+                                6,
+                                3,
+                                5,
+                                2
+                            ],
+                            "citations": [
+                                10,
+                                5,
+                                7,
+                                5,
+                                3
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Banka Creditas",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Banka Creditas",
+                            "Banka CREDITAS"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                5,
+                                3.7,
+                                1.1,
+                                3.1,
+                                5
+                            ],
+                            "sentiment": [
+                                70,
+                                77.5,
+                                50,
+                                67.5,
+                                85
+                            ],
+                            "avgPosition": [
+                                5.3,
+                                3.5,
+                                11,
+                                5.5,
+                                4
+                            ],
+                            "detectionRate": [
+                                6.8,
+                                4.5,
+                                2.3,
+                                4.5,
+                                6.5
+                            ],
+                            "top3": [
+                                2.3,
+                                2.3,
+                                0,
+                                0,
+                                3.2
+                            ],
+                            "mentions": [
+                                3,
+                                2,
+                                1,
+                                2,
+                                2
+                            ],
+                            "citations": [
+                                3,
+                                3,
+                                0,
+                                2,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "name": "UniCredit Bank Czech Republic and Slovakia",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "UniCredit Bank Czech Republic and Slovakia"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                3,
+                                0,
+                                3,
+                                3,
+                                4.5
+                            ],
+                            "sentiment": [
+                                55,
+                                0,
+                                47.5,
+                                47.5,
+                                65
+                            ],
+                            "avgPosition": [
+                                6.5,
+                                0,
+                                6.5,
+                                6,
+                                5.5
+                            ],
+                            "detectionRate": [
+                                4.5,
+                                0,
+                                4.5,
+                                4.5,
+                                6.5
+                            ],
+                            "top3": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "mentions": [
+                                2,
+                                0,
+                                2,
+                                2,
+                                2
+                            ],
+                            "citations": [
+                                1,
+                                0,
+                                0,
+                                0,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Wise",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Wise"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                8.3,
+                                11.1,
+                                8.1,
+                                9.3,
+                                4.3
+                            ],
+                            "sentiment": [
+                                86.3,
+                                81.5,
+                                88.8,
+                                85,
+                                82.5
+                            ],
+                            "avgPosition": [
+                                2,
+                                3.8,
+                                2.5,
+                                3.8,
+                                6
+                            ],
+                            "detectionRate": [
+                                9.1,
+                                13.6,
+                                9.1,
+                                11.4,
+                                6.5
+                            ],
+                            "top3": [
+                                9.1,
+                                9.1,
+                                6.8,
+                                4.5,
+                                0
+                            ],
+                            "mentions": [
+                                4,
+                                6,
+                                4,
+                                5,
+                                2
+                            ],
+                            "citations": [
+                                7,
+                                6,
+                                2,
+                                7,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Trinity Bank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Trinity Bank"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                7.2,
+                                7,
+                                3.3,
+                                1.9,
+                                3.2
+                            ],
+                            "sentiment": [
+                                70,
+                                70,
+                                62.5,
+                                60,
+                                85
+                            ],
+                            "avgPosition": [
+                                4.5,
+                                4.5,
+                                6,
+                                3,
+                                1
+                            ],
+                            "detectionRate": [
+                                9.1,
+                                9.1,
+                                4.5,
+                                2.3,
+                                3.2
+                            ],
+                            "top3": [
+                                4.5,
+                                4.5,
+                                2.3,
+                                2.3,
+                                3.2
+                            ],
+                            "mentions": [
+                                4,
+                                4,
+                                2,
+                                1,
+                                1
+                            ],
+                            "citations": [
+                                3,
+                                3,
+                                1,
+                                1,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Equa bank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Equa bank"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                1.9,
+                                1.7,
+                                0,
+                                2.1,
+                                2.9
+                            ],
+                            "sentiment": [
+                                70,
+                                50,
+                                0,
+                                70,
+                                50
+                            ],
+                            "avgPosition": [
+                                3,
+                                4,
+                                0,
+                                2,
+                                2
+                            ],
+                            "detectionRate": [
+                                2.3,
+                                2.3,
+                                0,
+                                2.3,
+                                3.2
+                            ],
+                            "top3": [
+                                2.3,
+                                0,
+                                0,
+                                2.3,
+                                3.2
+                            ],
+                            "mentions": [
+                                1,
+                                1,
+                                0,
+                                1,
+                                1
+                            ],
+                            "citations": [
+                                1,
+                                1,
+                                0,
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Zonky",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Zonky"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                4,
+                                2.3,
+                                2.3,
+                                1.2,
+                                2.9
+                            ],
+                            "sentiment": [
+                                80,
+                                85,
+                                85,
+                                55,
+                                80
+                            ],
+                            "avgPosition": [
+                                2.5,
+                                1,
+                                1,
+                                10,
+                                2
+                            ],
+                            "detectionRate": [
+                                4.5,
+                                2.3,
+                                2.3,
+                                2.3,
+                                3.2
+                            ],
+                            "top3": [
+                                4.5,
+                                2.3,
+                                2.3,
+                                0,
+                                3.2
+                            ],
+                            "mentions": [
+                                2,
+                                1,
+                                1,
+                                1,
+                                1
+                            ],
+                            "citations": [
+                                3,
+                                0,
+                                1,
+                                0,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Hypo na miru",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Hypo na míru"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                0,
+                                1.3,
+                                0,
+                                0,
+                                2.2
+                            ],
+                            "sentiment": [
+                                0,
+                                85,
+                                0,
+                                0,
+                                80
+                            ],
+                            "avgPosition": [
+                                0,
+                                9,
+                                0,
+                                0,
+                                6
+                            ],
+                            "detectionRate": [
+                                0,
+                                2.3,
+                                0,
+                                0,
+                                3.2
+                            ],
+                            "top3": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "mentions": [
+                                0,
+                                1,
+                                0,
+                                0,
+                                1
+                            ],
+                            "citations": [
+                                0,
+                                1,
+                                0,
+                                0,
+                                0
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Hypotecni banka",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Hypoteční banka"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                0,
+                                1.3,
+                                1.4,
+                                0,
+                                1.7
+                            ],
+                            "sentiment": [
+                                0,
+                                60,
+                                65,
+                                0,
+                                60
+                            ],
+                            "avgPosition": [
+                                0,
+                                8,
+                                7,
+                                0,
+                                10
+                            ],
+                            "detectionRate": [
+                                0,
+                                2.3,
+                                2.3,
+                                0,
+                                3.2
+                            ],
+                            "top3": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "mentions": [
+                                0,
+                                1,
+                                1,
+                                0,
+                                1
+                            ],
+                            "citations": [
+                                0,
+                                1,
+                                1,
+                                0,
+                                1
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Ally Bank",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Ally Bank"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                0,
+                                0,
+                                0,
+                                2.3,
+                                0
+                            ],
+                            "sentiment": [
+                                0,
+                                0,
+                                0,
+                                90,
+                                0
+                            ],
+                            "avgPosition": [
+                                0,
+                                0,
+                                0,
+                                1,
+                                0
+                            ],
+                            "detectionRate": [
+                                0,
+                                0,
+                                0,
+                                2.3,
+                                0
+                            ],
+                            "top3": [
+                                0,
+                                0,
+                                0,
+                                2.3,
+                                0
+                            ],
+                            "mentions": [
+                                0,
+                                0,
+                                0,
+                                1,
+                                0
+                            ],
+                            "citations": [
+                                0,
+                                0,
+                                0,
+                                2,
+                                0
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Chase",
+                        "isOwnBrand": false,
+                        "variations": [
+                            "Chase"
+                        ],
+                        "metrics": {
+                            "visibilityScore": [
+                                0,
+                                0,
+                                0,
+                                2.1,
+                                0
+                            ],
+                            "sentiment": [
+                                0,
+                                0,
+                                0,
+                                85,
+                                0
+                            ],
+                            "avgPosition": [
+                                0,
+                                0,
+                                0,
+                                2,
+                                0
+                            ],
+                            "detectionRate": [
+                                0,
+                                0,
+                                0,
+                                2.3,
+                                0
+                            ],
+                            "top3": [
+                                0,
+                                0,
+                                0,
+                                2.3,
+                                0
+                            ],
+                            "mentions": [
+                                0,
+                                0,
+                                0,
+                                1,
+                                0
+                            ],
+                            "citations": [
+                                0,
+                                0,
+                                0,
+                                1,
+                                0
+                            ]
+                        }
+                    },
+                    {
+                        "name": "Others",
+                        "isOwnBrand": false,
+                        "isOthers": true,
+                        "othersBrandCount": 4,
+                        "variations": [],
+                        "metrics": {
+                            "visibilityScore": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "sentiment": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "avgPosition": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "detectionRate": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "top3": [
+                                0,
+                                0,
+                                0,
+                                0,
+                                0
+                            ],
+                            "mentions": [
+                                0,
+                                2,
+                                6,
+                                9,
+                                0
+                            ],
+                            "citations": [
+                                0,
+                                0,
+                                0,
+                                8,
+                                0
+                            ]
+                        }
+                    }
+                ]
+            },
+            "monthly": {
+                "timestamps": [],
+                "competitors": []
+            }
+        }
+    }
+}
