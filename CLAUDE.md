@@ -49,8 +49,12 @@ deliberate style in this file.
   `src/.dockerignore` explicitly keeps `env.yaml`/`schema_raw.sql` out of the build
   context too, since the Dockerfile only `COPY`s the script and `requirements.txt`.
 - `doc/` — supporting docs that are never deployed: `SECURITY_CHECKLIST.md`,
-  `API_KEY_ROTATION.md`, and `api/` (per-endpoint Rankscale API reference,
-  built from real Postman captures — see `doc/api/README.md`).
+  `API_KEY_ROTATION.md`, `DEPLOY_NEW_PROJECT.md`, and `api/` (per-endpoint
+  Rankscale API reference, built from real Postman captures — see
+  `doc/api/README.md`).
+- `scripts/` — standalone one-off scripts, not deployed, not run by `main()`
+  or the Docker build (see `doc/api/README.md`/CLAUDE.md's Data flow section
+  for `test_topic_engine_metrics.py`).
 - Root — only `README.md`, `Makefile`, `pyproject.toml` (ruff config), `requirements-dev.txt`.
 
 ## Architecture: one script, four config surfaces
@@ -82,30 +86,43 @@ one to change:
 - `extract_brand_topics()` → `GET /v1/metrics/brands`, but only to build
   `topics_by_brand: dict[brand_id, list[(topic_id, topic_name)]]` from each
   brand's `operationalTopics`. Nothing from this call is written to BigQuery.
-- `extract_topic_metrics_history()` → for every `(brand_id, topic_id)` pair,
-  calls `POST /v1/metrics/report` with `selectedTopic=<topic_id>` and
+- `extract_topic_metrics_history()` → for every `(brand_id, topic_id, engine)`
+  triple — `engine` iterates `["all", *ENGINES]`, `ENGINES` being the
+  hardcoded list `chatgpt_gui`, `google_ai_overview`, `google_ai_mode_gui`,
+  `bing_copilot_gui`, `google_gemini_gui` — calls `POST /v1/metrics/report`
+  with `selectedTopic=<topic_id>`, `selectedEngine=<engine>`, and
   `aggregation=weekly`, covering `TOPIC_METRICS_START_DATE` (hardcoded,
   `2026-05-11` — when real data starts in this Rankscale account) through
-  today. **Must be called once per topic** — `selectedTopic: "all"` returns
-  different, non-comparable aggregate data; confirmed via a real A/B test,
-  see `doc/api/report.md`.
+  today. **Must be called once per topic and once per engine** —
+  `selectedTopic`/`selectedEngine` set to `"all"` returns different,
+  non-comparable aggregate data for competitors specifically (own-brand
+  numbers shift too, but competitor identities/values genuinely differ);
+  confirmed via real A/B tests for both parameters independently, see
+  `doc/api/report.md`. That's `len(topics) × 6` calls per brand per run —
+  currently ~66 total across both brands.
 - From each response: `ownBrandMetrics.historicalData.weekly` gives the own
   brand's weekly time series; `competitorTimeSeriesData.weekly.competitors[]`
   gives the same per named competitor (plus a catch-all `"Others"` bucket).
-  Both get flattened into rows by `_topic_metric_rows()` and written to
+  Both get flattened into rows by `_topic_metric_rows()` (which now also
+  stamps the `engine` value onto every row) and written to
   `topic_metrics_history`. Own brand and competitors use different key sets
   in the API (`ownBrandMetrics` has more fields) — `_topic_metric_rows()`
   only pulls the subset both have in common.
 - Runs unconditionally on every invocation (daily or backfill) — there is no
   skip-if-no-new-data check and no per-brand loop with partial early exit;
-  a single call sequence covers all brands and topics.
-- One topic call failing marks its brand as failed (collected in
+  a single call sequence covers all brands, topics, and engines.
+- One `(topic, engine)` call failing marks its brand as failed (collected in
   `extract_topic_metrics_history()`) but does not stop the rest — other
-  topics/brands are still attempted. `main()` raises `sys.exit(1)` only after
-  everything has been attempted, if anything failed. A separate top-level
-  `try/except` in `main()` catches failures *outside* that loop (e.g.
-  `extract_brand_topics()` itself failing) and still logs a run row before
-  exiting.
+  topic/engine combinations and brands are still attempted. `main()` raises
+  `sys.exit(1)` only after everything has been attempted, if anything failed.
+  A separate top-level `try/except` in `main()` catches failures *outside*
+  that loop (e.g. `extract_brand_topics()` itself failing) and still logs a
+  run row before exiting.
+- `scripts/test_topic_engine_metrics.py` is a standalone, non-deployed
+  script used to validate the per-engine approach against a temporary table
+  (`topic_engine_metrics_history_test`) before it was merged into the
+  production path above — kept as a reference for similar future
+  experiments, not wired into `main()` or the Docker build.
 
 ## Per-run logging (`etl_runs`) and alerting
 

@@ -150,10 +150,23 @@ def extract_brand_topics(client: bigquery.Client) -> dict[str, list[tuple[str, s
     return topics_by_brand
 
 
+# AI enginy, přes které se stahuje rozpad navíc k celkovému pohledu
+# ("all"). Natvrdo — pokud Rankscale přidá/odebere engine, je potřeba
+# seznam ručně upravit (viz doc/api/report.md).
+ENGINES = [
+    "chatgpt_gui",
+    "google_ai_overview",
+    "google_ai_mode_gui",
+    "bing_copilot_gui",
+    "google_gemini_gui",
+]
+
+
 def _topic_metric_rows(
     brand_id: str,
     topic_id: str,
     topic_name: str,
+    engine: str,
     entity_name: str,
     is_own_brand: bool,
     series: dict,
@@ -174,6 +187,7 @@ def _topic_metric_rows(
             "brand_id":        brand_id,
             "topic_id":        topic_id,
             "topic_name":      topic_name,
+            "engine":          engine,
             "entity_name":     entity_name,
             "is_own_brand":    is_own_brand,
             "week_start":      ts,
@@ -196,12 +210,15 @@ def extract_topic_metrics_history(
     iso_end: str,
 ) -> tuple[list[str], list[str]]:
     """Týdenní historie visibility/sentiment (+ pár dalších metrik) pro vlastní
-    brand i konkurenty, rozdělená po topicu. Tabulka se přepisuje celá
-    (TRUNCATE) při každém běhu — POST /v1/metrics/report s 'selectedTopic'
-    vrací pokaždé kompletní okno historie znovu, ne jen nová data, takže
-    WRITE_APPEND by jen duplikoval stejné týdny (viz doc/api/report.md).
-    Musí se volat zvlášť per topic — 'selectedTopic: all' vrací jinou
-    (nesprávnou, souhrnnou) historii pro konkurenty.
+    brand i konkurenty, rozdělená po topicu a po AI enginu (`engine = "all"`
+    pro celkový pohled napříč enginy + jeden řádek navíc per engine z
+    ENGINES). Tabulka se přepisuje celá (TRUNCATE) při každém běhu — POST
+    /v1/metrics/report vrací pokaždé kompletní okno historie znovu, ne jen
+    nová data, takže WRITE_APPEND by jen duplikoval stejné týdny (viz
+    doc/api/report.md). Musí se volat zvlášť per (topic, engine) dvojici —
+    'selectedTopic'/'selectedEngine' nastavené na 'all' vrací jinou
+    (nesprávnou, souhrnnou) historii pro konkurenty; ověřeno A/B testem pro
+    oba parametry samostatně.
 
     Vrátí (failed_brands, error_messages) pro log_run().
     """
@@ -213,37 +230,40 @@ def extract_topic_metrics_history(
     for brand_id, topics in topics_by_brand.items():
         brand_failed = False
         for topic_id, topic_name in topics:
-            try:
-                data = api_post("/v1/metrics/report", {
-                    "brandId":       brand_id,
-                    "aggregation":   "weekly",
-                    "selectedTopic": topic_id,
-                    "isoStartDate":  iso_start,
-                    "isoEndDate":    iso_end,
-                })
-            except Exception as e:
-                log.error(f"    {brand_id}/{topic_name}: selhalo — {e}")
-                brand_failed = True
-                errors.append(f"{brand_id}/{topic_name}: {e}")
-                continue
+            for engine in ["all", *ENGINES]:
+                try:
+                    data = api_post("/v1/metrics/report", {
+                        "brandId":        brand_id,
+                        "aggregation":    "weekly",
+                        "selectedTopic":  topic_id,
+                        "selectedEngine": engine,
+                        "isoStartDate":   iso_start,
+                        "isoEndDate":     iso_end,
+                    })
+                except Exception as e:
+                    log.error(f"    {brand_id}/{topic_name}/{engine}: selhalo — {e}")
+                    brand_failed = True
+                    errors.append(f"{brand_id}/{topic_name}/{engine}: {e}")
+                    continue
 
-            d = data["data"]
-            own = d["ownBrandMetrics"]
-            rows += _topic_metric_rows(
-                brand_id, topic_id, topic_name, own["name"], True,
-                own["historicalData"]["weekly"],
-            )
-
-            comp_series = d["competitorTimeSeriesData"]["weekly"]
-            comp_timestamps = comp_series.get("timestamps", [])
-            for comp in comp_series.get("competitors", []):
+                d = data["data"]
+                own = d["ownBrandMetrics"]
                 rows += _topic_metric_rows(
-                    brand_id, topic_id, topic_name, comp["name"], False,
-                    {"timestamps": comp_timestamps, **comp["metrics"]},
+                    brand_id, topic_id, topic_name, engine, own["name"], True,
+                    own["historicalData"]["weekly"],
                 )
 
-            log.info(f"    {brand_id}/{topic_name}: {len(comp_series.get('competitors', []))} konkurentů")
-            time.sleep(RATE_SLEEP)
+                comp_series = d["competitorTimeSeriesData"]["weekly"]
+                comp_timestamps = comp_series.get("timestamps", [])
+                for comp in comp_series.get("competitors", []):
+                    rows += _topic_metric_rows(
+                        brand_id, topic_id, topic_name, engine, comp["name"], False,
+                        {"timestamps": comp_timestamps, **comp["metrics"]},
+                    )
+
+                time.sleep(RATE_SLEEP)
+
+            log.info(f"    {brand_id}/{topic_name}: hotovo (all + {len(ENGINES)} enginů)")
 
         if brand_failed:
             failed_brands.append(brand_id)

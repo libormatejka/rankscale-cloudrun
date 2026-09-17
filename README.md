@@ -1,9 +1,9 @@
 # Rankscale → BigQuery — Cloud Run Job
 
 Denní pipeline, která z Rankscale Metrics API stahuje **týdenní historii
-visibility/sentimentu vlastního brandu i konkurentů, rozdělenou po topicu**
-(`topic_metrics_history` tabulka v BigQuery). Běží jako **Cloud Run Job**
-spouštěný z **Cloud Scheduleru**.
+visibility/sentimentu vlastního brandu i konkurentů, rozdělenou po topicu a
+po AI enginu** (`topic_metrics_history` tabulka v BigQuery). Běží jako
+**Cloud Run Job** spouštěný z **Cloud Scheduleru**.
 
 - **Autentizace k BigQuery**: Application Default Credentials — service
   account je přiřazený přímo k jobu, žádný klíč se nikam nekopíruje.
@@ -407,21 +407,31 @@ run logu výše — sloupec `error_message`).
 
 Týdenní historie `visibility_score`/`sentiment` (+ `avg_position`,
 `detection_rate`, `top3`, `mentions`, `citations`) pro **vlastní brand i
-konkurenty**, rozdělená po topicu — zdroj pro grafy typu "Brand Performance
-Over Time" z Rankscale UI. Plní `extract_topic_metrics_history()`, voláno při
+konkurenty**, rozdělená po topicu **a po AI enginu** — zdroj pro grafy typu
+"Brand Performance Over Time" z Rankscale UI, s možností rozpadu na
+konkrétní engine (`chatgpt_gui`, `google_ai_overview`, `google_ai_mode_gui`,
+`bing_copilot_gui`, `google_gemini_gui`) i celkového pohledu napříč nimi
+(`engine = 'all'`). Plní `extract_topic_metrics_history()`, voláno při
 každém běhu (denním i backfillu), okno `TOPIC_METRICS_START_DATE`
 (natvrdo `2026-05-11` — odkud v Rankscale reálně existují data) až dnešek.
 
 **Na rozdíl od ostatních tabulek se přepisuje celá** (`TRUNCATE`, ne
 `WRITE_APPEND`) při každém běhu — `POST /v1/metrics/report` s
-`selectedTopic` vrací pokaždé kompletní okno historie znovu, ne jen nová
-data, takže append by jen duplikoval týdny. Detaily a jak jsme na tenhle
-přístup přišli: [doc/api/report.md](doc/api/report.md).
+`selectedTopic`/`selectedEngine` vrací pokaždé kompletní okno historie
+znovu, ne jen nová data, takže append by jen duplikoval týdny. Detaily a
+jak jsme na tenhle přístup přišli: [doc/api/report.md](doc/api/report.md).
 
 ```sql
+-- Celkový pohled napříč enginy (jako v Rankscale UI):
 SELECT topic_name, entity_name, is_own_brand, week_start, visibility_score, sentiment
 FROM `RankScaleDashboard.topic_metrics_history`
-WHERE topic_id = 'ZFyMrgG0cuuEAvCdf1nr'
+WHERE topic_id = 'ZFyMrgG0cuuEAvCdf1nr' AND engine = 'all'
+ORDER BY week_start
+
+-- Rozpad na konkrétní engine:
+SELECT topic_name, engine, entity_name, is_own_brand, week_start, visibility_score, sentiment
+FROM `RankScaleDashboard.topic_metrics_history`
+WHERE topic_id = 'ZFyMrgG0cuuEAvCdf1nr' AND engine = 'chatgpt_gui'
 ORDER BY week_start
 ```
 
