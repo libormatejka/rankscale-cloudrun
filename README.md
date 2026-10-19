@@ -72,11 +72,12 @@ nespoléhej na ambientní `gcloud config set project`, ať si jsi jistý, že
 service account, secret, Cloud Run Job i Scheduler vznikají ve stejném
 projektu.
 
-Shell proměnné (`$GCP_PROJECT`, `$REGION`, `$REPO`, `$SA_NAME`) z kroku 1 platí
-jen v aktuální session terminálu. Než spustíš cokoliv z návodu, ověř:
+Shell proměnné (`$GCP_PROJECT`, `$REGION`, `$REPO`, `$SA_NAME`,
+`$SCHEDULER_SA_NAME`) z kroku 1 platí jen v aktuální session terminálu.
+Než spustíš cokoliv z návodu, ověř:
 
 ```bash
-echo $GCP_PROJECT $REGION $REPO $SA_NAME
+echo $GCP_PROJECT $REGION $REPO $SA_NAME $SCHEDULER_SA_NAME
 ```
 
 Pokud je výstup prázdný, spusť `export` řádky z kroku 1 znovu.
@@ -116,7 +117,8 @@ billing account.)
 export GCP_PROJECT=rankscale         # skutečné project ID (ne "hezký" název)
 export REGION=europe-west3          # nebo jiný region blízko tebe
 export REPO=rankscale
-export SA_NAME=rankscale-extract-job
+export SA_NAME=rankscale-extract-job        # runtime SA (Cloud Run Job)
+export SCHEDULER_SA_NAME=rankscale-scheduler # samostatná SA jen pro Cloud Scheduler
 
 gcloud config set project $GCP_PROJECT
 gcloud config get-value project      # musí vypsat přesně $GCP_PROJECT
@@ -128,8 +130,12 @@ gcloud services enable \
   secretmanager.googleapis.com \
   bigquery.googleapis.com \
   cloudbuild.googleapis.com \
+  containerscanning.googleapis.com \
   --project=$GCP_PROJECT
 ```
+
+(`containerscanning.googleapis.com` zapíná automatický vulnerability
+scanning image v Artifact Registry — běží na pozadí, nic dalšího nevyžaduje.)
 
 ### Cloud Build oprávnění (nutné u nově založených projektů)
 
@@ -146,9 +152,15 @@ gcloud projects add-iam-policy-binding $GCP_PROJECT \
   --role="roles/cloudbuild.builds.builder"
 ```
 
-## 2. Service account pro job
+## 2. Service accounts (runtime + scheduler)
 
-Samostatný SA jen pro tento job, založený přímo v `$GCP_PROJECT`.
+**Dvě oddělené identity** — runtime SA pro Cloud Run Job samotný a
+samostatná scheduler SA jen pro Cloud Scheduler. Důvod: scheduler nemá
+žádný důvod umět číst/psát BigQuery a runtime nemá žádný důvod spouštět
+Cloud Run joby — sdílená SA by zbytečně rozšiřovala blast radius při
+kompromitaci kterékoli z těch dvou rolí.
+
+### Runtime SA (Cloud Run Job)
 
 ```bash
 gcloud iam service-accounts create $SA_NAME \
@@ -157,19 +169,15 @@ gcloud iam service-accounts create $SA_NAME \
 
 gcloud projects add-iam-policy-binding $GCP_PROJECT \
   --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
-  --role="roles/bigquery.dataEditor"
-
-gcloud projects add-iam-policy-binding $GCP_PROJECT \
-  --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
   --role="roles/bigquery.jobUser"
-
-gcloud projects add-iam-policy-binding $GCP_PROJECT \
-  --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
-  --role="roles/run.invoker"
 ```
 
-(`roles/run.invoker` se hodí až u kroku 6 pro Cloud Scheduler, ale je jednodušší
-přidat ho rovnou tady se zbytkem.)
+`roles/bigquery.jobUser` musí být na úrovni projektu (BigQuery joby se
+spouští per-projekt, žádný dataset-scoped ekvivalent neexistuje).
+`roles/bigquery.dataEditor` se naproti tomu přidává **na úrovni datasetu**,
+ne projektu — až v kroku 3b, protože dataset tou dobou ještě neexistuje.
+Tahle SA **nemá** `roles/run.invoker` — ten dostane jen scheduler SA níže,
+a jen na konkrétní job (krok 6), ne na celý projekt.
 
 Ověř, že SA opravdu vznikl v `$GCP_PROJECT`:
 
@@ -177,6 +185,17 @@ Ověř, že SA opravdu vznikl v `$GCP_PROJECT`:
 gcloud iam service-accounts describe "${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
   --project=$GCP_PROJECT
 ```
+
+### Scheduler SA (Cloud Scheduler)
+
+```bash
+gcloud iam service-accounts create $SCHEDULER_SA_NAME \
+  --project=$GCP_PROJECT \
+  --display-name="Rankscale Extract Cloud Scheduler"
+```
+
+Žádné role tady ještě nepřidávej — `roles/run.invoker` jde až v kroku 6,
+na konkrétní Cloud Run Job (ne na projekt), až job existuje.
 
 ## 3. Rankscale API klíč do Secret Manageru
 
@@ -217,6 +236,16 @@ bq --project_id=$GCP_PROJECT mk --dataset --location=EU ${GCP_PROJECT}:RankScale
 bq query --project_id=$GCP_PROJECT --use_legacy_sql=false < src/schema_raw.sql
 ```
 
+Teď, když dataset existuje, dej runtime SA `bigquery.dataEditor` **jen na
+tenhle dataset** — ne na celý projekt (viz krok 2):
+
+```bash
+bq add-iam-policy-binding \
+  --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+  --role="roles/bigquery.dataEditor" \
+  ${GCP_PROJECT}:RankScaleDashboard
+```
+
 `src/schema_raw.sql` nemá project ID natvrdo zapsané — `--project_id`
 určí, do kterého projektu se tabulky založí, takže při přesunu na jiný projekt
 stačí mít správně nastavené `$GCP_PROJECT` a soubor spustit beze změny.
@@ -235,11 +264,19 @@ příkaz spouštěj z kořene repozitáře:
 
 ```bash
 gcloud artifacts repositories create $REPO \
-  --repository-format=docker --location=$REGION --project=$GCP_PROJECT
+  --repository-format=docker --location=$REGION --project=$GCP_PROJECT \
+  --immutable-tags
+
+export TAG=$(git rev-parse --short HEAD)
 
 gcloud builds submit src --project=$GCP_PROJECT \
-  --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest"
+  --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:${TAG}"
 ```
+
+`--immutable-tags` znemožní přepsat jakýkoliv tag v tomhle repu (vč.
+`latest`, který se proto dál nepoužívá) — tag podle git SHA commitu jde
+dohledat i použít pro rollback. `make deploy-build` tohle dělá automaticky
+(`$(git rev-parse --short HEAD)` je v `Makefile` jako `TAG`).
 
 Zkratka: `make deploy-build`.
 
@@ -251,7 +288,7 @@ skript, se **nepíšou do příkazu ručně** — jsou v [`src/env.yaml`](src/en
 
 ```bash
 gcloud run jobs create rankscale-extract --project=$GCP_PROJECT \
-  --image="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest" \
+  --image="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:${TAG}" \
   --region=$REGION \
   --service-account="${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
   --env-vars-file=src/env.yaml \
@@ -302,16 +339,23 @@ backfill potřebuje.
 
 ## 6. Denní spouštění přes Cloud Scheduler
 
-Scheduler job zakládej ve stejném `$GCP_PROJECT` jako Cloud Run Job a SA.
+Scheduler job zakládej ve stejném `$GCP_PROJECT` jako Cloud Run Job. Použij
+**scheduler SA** (krok 2), ne runtime SA — a `run.invoker` jí dej jen na
+tenhle konkrétní job, ne na celý projekt:
 
 ```bash
+gcloud run jobs add-iam-policy-binding rankscale-extract \
+  --project=$GCP_PROJECT --region=$REGION \
+  --member="serviceAccount:${SCHEDULER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+  --role="roles/run.invoker"
+
 gcloud scheduler jobs create http rankscale-extract-daily \
   --project=$GCP_PROJECT \
   --location=$REGION \
   --schedule="30 6 * * *" \
   --uri="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${GCP_PROJECT}/jobs/rankscale-extract:run" \
   --http-method=POST \
-  --oauth-service-account-email="${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+  --oauth-service-account-email="${SCHEDULER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
   --time-zone="UTC"
 ```
 
@@ -334,11 +378,13 @@ Hledej execution s časem odpovídajícím spuštění scheduleru a `STATUS: Tru
 ## 7. Aktualizace image po změně kódu
 
 ```bash
+export TAG=$(git rev-parse --short HEAD)
+
 gcloud builds submit src --project=$GCP_PROJECT \
-  --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest"
+  --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:${TAG}"
 
 gcloud run jobs update rankscale-extract --project=$GCP_PROJECT \
-  --image="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:latest" \
+  --image="${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:${TAG}" \
   --region=$REGION
 ```
 

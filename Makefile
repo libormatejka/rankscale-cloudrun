@@ -1,6 +1,12 @@
 # Vyžaduje pro deploy-* / execute / backfill: GCP_PROJECT, REGION, REPO
 # (viz README, krok 1) — exportované v shellu, ne natvrdo tady.
-IMAGE      ?= $(REGION)-docker.pkg.dev/$(GCP_PROJECT)/$(REPO)/rankscale-extract:latest
+#
+# Tag podle git SHA, ne "latest" — Artifact Registry repo má (po Fázi D
+# v SECURITY_CHECKLIST.md) zapnuté immutable tags, takže by přepsání
+# "latest" stejně selhalo. Verzovaný tag navíc umí rollback (deploy-update
+# se starším TAG=... na konkrétní commit).
+TAG        := $(shell git rev-parse --short HEAD)
+IMAGE      ?= $(REGION)-docker.pkg.dev/$(GCP_PROJECT)/$(REPO)/rankscale-extract:$(TAG)
 JOB        := rankscale-extract
 WEEKS      ?= 52
 BQ_DATASET ?= RankScaleDashboard

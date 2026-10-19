@@ -35,16 +35,81 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 
 ## 🟠 Vysoká závažnost
 
-- [ ] **`roles/bigquery.dataEditor` je na úrovni projektu, ne datasetu**
-      SA `rankscale-extract-job` může zapisovat do libovolného datasetu v
-      `rankscale`, ne jen `RankScaleDashboard`.
-      **Fix:** binding na úrovni datasetu (`bq add-iam-policy-binding`), ne
-      `gcloud projects add-iam-policy-binding`.
+- [ ] **`roles/bigquery.dataEditor` je na úrovni projektu, ne datasetu**,
+      **`roles/run.invoker` je na úrovni projektu, ne konkrétního Cloud Run
+      Jobu**, a **Cloud Run Job + Cloud Scheduler sdílí jeden service
+      account** — tři propojené nálezy, jedna migrace. SA
+      `rankscale-extract-job` dnes může zapisovat do libovolného datasetu
+      v `rankscale` (ne jen `RankScaleDashboard`), smí spustit jakýkoliv
+      Cloud Run service/job v projektu (ne jen `rankscale-extract`), a
+      používá ji zároveň Cloud Scheduler (který žádné BigQuery právo
+      nepotřebuje) i runtime (který `run.invoker` nepotřebuje vůbec).
+      Rozšiřuje to blast radius při kompromitaci kterékoli ze dvou rolí.
 
-- [ ] **`roles/run.invoker` je na úrovni projektu, ne konkrétního Cloud Run Jobu**
-      SA smí spustit jakýkoliv Cloud Run service/job v projektu, ne jen
-      `rankscale-extract`.
-      **Fix:** `gcloud run jobs add-iam-policy-binding` na konkrétní job.
+      **Fix — migrace `rankscale` na dvě SA** (nové projekty mají tohle
+      už od začátku, viz README krok 2/3b/6 a `doc/DEPLOY_NEW_PROJECT.md`):
+
+      ```bash
+      export GCP_PROJECT=rankscale
+      export REGION=europe-west3   # over, jaký region job reálně používá
+      export SA_NAME=rankscale-extract-job
+      export SCHEDULER_SA_NAME=rankscale-scheduler
+
+      # 1. Nová scheduler SA
+      gcloud iam service-accounts create $SCHEDULER_SA_NAME \
+        --project=$GCP_PROJECT \
+        --display-name="Rankscale Extract Cloud Scheduler"
+
+      # 2. run.invoker pro novou SA, jen na konkrétní job (ne projekt)
+      gcloud run jobs add-iam-policy-binding rankscale-extract \
+        --project=$GCP_PROJECT --region=$REGION \
+        --member="serviceAccount:${SCHEDULER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+        --role="roles/run.invoker"
+
+      # 3. Přepni Cloud Scheduler na novou SA
+      gcloud scheduler jobs update http rankscale-extract-daily \
+        --project=$GCP_PROJECT --location=$REGION \
+        --oauth-service-account-email="${SCHEDULER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
+
+      # 4. Over, že scheduler novou SA reálně použije (ručně spusť, zkontroluj execution)
+      gcloud scheduler jobs run rankscale-extract-daily --project=$GCP_PROJECT --location=$REGION
+      sleep 30
+      gcloud run jobs executions list --job=rankscale-extract --project=$GCP_PROJECT --region=$REGION --limit=1 \
+        --format="table(metadata.name,status.conditions[0].status)"
+
+      # 5. Dataset-level bigquery.dataEditor pro runtime SA
+      bq add-iam-policy-binding \
+        --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+        --role="roles/bigquery.dataEditor" \
+        ${GCP_PROJECT}:RankScaleDashboard
+
+      # 6. Over ruční exekucí, že runtime SA dál umí zapisovat (dataset-level binding funguje)
+      gcloud run jobs execute rankscale-extract --project=$GCP_PROJECT --region=$REGION
+
+      # --- Až 4. a 6. prokazatelně projdou (execution STATUS: True), odeber staré project-level bindingy: ---
+
+      # 7. Zruš project-level run.invoker na runtime SA (teď ho má jen scheduler SA, scoped na job)
+      gcloud projects remove-iam-policy-binding $GCP_PROJECT \
+        --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+        --role="roles/run.invoker"
+
+      # 8. Zruš project-level bigquery.dataEditor na runtime SA (teď má jen dataset-level z kroku 5)
+      gcloud projects remove-iam-policy-binding $GCP_PROJECT \
+        --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
+        --role="roles/bigquery.dataEditor"
+      ```
+
+      Po dokončení ověř výsledný stav:
+      ```bash
+      gcloud projects get-iam-policy $GCP_PROJECT \
+        --flatten="bindings[].members" \
+        --filter="bindings.members:rankscale-extract-job OR bindings.members:rankscale-scheduler" \
+        --format="table(bindings.role,bindings.members)"
+      ```
+      Runtime SA by tam měla mít jen `bigquery.jobUser` (+ `secretAccessor`
+      na secretu, to je mimo tenhle project-level výpis), scheduler SA
+      vůbec nic na úrovni projektu (její `run.invoker` je scoped na job,
+      taky mimo tenhle výpis).
 
 - [ ] **Duplicitní Rankscale API klíč napříč `libor-matejkacz` a `rankscale`**
       Stejná hodnota klíče leží ve dvou nezávislých Secret Manager instancích —
@@ -117,21 +182,35 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       Build na stejné identitě, kterou mohou v budoucnu používat i jiné
       workloady v projektu (VM instance apod.) — spojuje odpovědnosti různých
       funkcí do jedné identity.
-      **Fix:** dedikovaný build SA jen s oprávněním číst zdrojový kód, sestavit
-      image, zapisovat do konkrétního Artifact Registry repa a build logů
-      (případně i deploy, pokud půjde přes build pipeline).
-      (Nalezeno v externím review 2026-10.)
 
-- [ ] **Cloud Run Job a Cloud Scheduler sdílí jeden service account**
-      Stejný SA má zároveň BigQuery oprávnění (scheduler je nepotřebuje) i
-      `run.invoker` na úrovni projektu (runtime SA ho nepotřebuje vůbec).
-      Rozšiřuje to blast radius při kompromitaci kterékoli ze dvou rolí.
-      **Fix:** rozdělit na dvě identity:
-      - **Runtime SA**: `bigquery.jobUser` (projekt) + `bigquery.dataEditor`
-        (jen cílový dataset, viz nález výše) + `secretmanager.secretAccessor`
-        (jen konkrétní secret)
-      - **Scheduler SA**: `run.invoker` jen na konkrétním Cloud Run Jobu
-        (ne projekt, viz nález výše)
+      **Fix:** dedikovaná build SA:
+      ```bash
+      gcloud iam service-accounts create rankscale-build \
+        --project=$GCP_PROJECT --display-name="Rankscale Cloud Build"
+
+      gcloud projects add-iam-policy-binding $GCP_PROJECT \
+        --member="serviceAccount:rankscale-build@${GCP_PROJECT}.iam.gserviceaccount.com" \
+        --role="roles/cloudbuild.builds.builder"
+
+      gcloud projects add-iam-policy-binding $GCP_PROJECT \
+        --member="serviceAccount:rankscale-build@${GCP_PROJECT}.iam.gserviceaccount.com" \
+        --role="roles/artifactregistry.writer"
+      ```
+      Build pak spustíš s `--service-account`:
+      ```bash
+      gcloud builds submit src --project=$GCP_PROJECT \
+        --service-account="projects/${GCP_PROJECT}/serviceAccounts/rankscale-build@${GCP_PROJECT}.iam.gserviceaccount.com" \
+        --tag "${REGION}-docker.pkg.dev/${GCP_PROJECT}/${REPO}/rankscale-extract:${TAG}"
+      ```
+      **Nevyzkoušeno naživo, ověř prvním buildem:** Cloud Build s vlastní
+      (ne defaultní) SA typicky vyžaduje buď nastavit projektové Cloud
+      Build logování na "Cloud Logging only" (Cloud Console → Cloud Build
+      → Settings → Default logging), nebo explicitní `--gcs-log-dir` na
+      bucket, kam má `rankscale-build` přístup — bez toho build může
+      spadnout na chybě o přístupu k výchozímu GCS log bucketu (ten vlastní
+      defaultní Compute SA, ne tahle nová identita). Kvůli tomu tenhle krok
+      zatím **není** zapojený do `Makefile`/README jako výchozí — je to
+      opt-in hardening, ne součást základního postupu, dokud není ověřený.
       (Nalezeno v externím review 2026-10.)
 
 ---
@@ -139,30 +218,51 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 ## 🟡 Střední závažnost
 
 - [x] **Image bez pinnutí na digest** — `src/Dockerfile` už používá
-      `FROM python:3.12-slim@sha256:...`. Zbývá jen vulnerability scanning
-      (GCP strana):
-      **Fix:** zapnout Artifact Analysis / Artifact Registry vulnerability
-      scanning pro repo s touto image (`gcloud artifacts` / Cloud Console).
+      `FROM python:3.12-slim@sha256:...`.
+      **Vulnerability scanning — zapnout na existujícím projektu:**
+      ```bash
+      gcloud services enable containerscanning.googleapis.com --project=$GCP_PROJECT
+      ```
+      Jednorázové, běží pak automaticky na pozadí pro všechny budoucí push
+      do Artifact Registry (žádný další krok). Nové projekty to mají v
+      `gcloud services enable` hned v `DEPLOY_NEW_PROJECT.md` kroku 1.
 
-- [ ] **Cloud Run Job je nasazený na tag `latest`, ne unikátní tag**
-      Cloud Run při deploymentu `latest` přeloží na konkrétní digest, takže
-      pozdější přepsání `latest` jiným image automaticky nezmění už nasazený
-      job — ale ztrácí se dohledatelnost verze a možnost snadného rollbacku.
-      **Fix:** tagovat image např. `image:2026-09-25` a zapnout immutable tags
-      v Artifact Registry, aby tagy nešly přepsat.
+- [x] **Cloud Run Job je nasazený na tag `latest`, ne unikátní tag** —
+      `Makefile`/README/`DEPLOY_NEW_PROJECT.md` teď tagují image podle
+      git SHA (`TAG := $(shell git rev-parse --short HEAD)`), ne `latest`.
+      **Zbývá migrovat existující `rankscale` repo:**
+      ```bash
+      gcloud artifacts repositories update $REPO \
+        --project=$GCP_PROJECT --location=$REGION --immutable-tags
+      ```
+      Jednorázové. Po tomhle přepsání `latest` (nebo jakéhokoliv jiného
+      tagu) v repu selže — `make deploy`/`make deploy-build` to neudělají,
+      používají už `$(TAG)` z gitu, ale pokud bys ručně spustil starý
+      `--tag ...:latest` příkaz z paměti/historie, spadne to na chybě
+      immutable tag.
       (Nalezeno v externím review 2026-10.)
 
 - [ ] **Chybí audit logging přístupu k Secret Manageru**
       Neloguje se, kdo/kdy čte `rankscale-api-key`.
-      **Fix:** IAM & Admin → Audit Logs → zapnout Data Read pro Secret
-      Manager API.
+      **Fix:** Console-only, žádný spolehlivý `gcloud` příkaz pro tenhle
+      konkrétní toggle — IAM & Admin → Audit Logs → najít "Secret Manager
+      API" → zaškrtnout **Data Read** (a klidně i Data Write) → Save.
       (Nalezeno v externím review 2026-10.)
 
 - [ ] **Dvě verze secretu `api-key`, nejasné jestli je v1 ještě platná**
       `:latest` ukazuje na verzi 2. Není ověřeno, jestli je verze 1 zneplatněná
       i na straně Rankscale (riziko zombie credential).
-      **Fix:** ověřit u Rankscale, zda je starý klíč zrušený; pokud ne,
-      zrušit ho. Viz také `doc/API_KEY_ROTATION.md`.
+      **Fix:**
+      ```bash
+      gcloud secrets versions list rankscale-api-key --project=$GCP_PROJECT
+      ```
+      U Rankscale (dashboard → Settings/API) ověř, že starý klíč (verze 1)
+      je zrušený. Pokud ano, zneplatni i v GCP (nevratné — `destroy`, ne
+      `disable`, pokud je jisté, že se k ní nikdy nebude potřeba vrátit):
+      ```bash
+      gcloud secrets versions disable 1 --secret=rankscale-api-key --project=$GCP_PROJECT
+      ```
+      Viz také `doc/API_KEY_ROTATION.md`.
       (Nalezeno v externím review 2026-10.)
 
 - [x] **Kontejner běží jako root**
@@ -211,10 +311,27 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 - [ ] **Cloud Audit Logs "Data Access" pro BigQuery pravděpodobně nejsou zapnuté**
       Defaultně vypnuté kvůli objemu logů — bez nich není vidět, kdo přesně
       četl jaká data.
+      **Fix:** Console-only, stejně jako Secret Manager audit logy výše —
+      IAM & Admin → Audit Logs → najít "BigQuery API" → zaškrtnout
+      **Data Read** → Save. Zváž objem/cenu logů před zapnutím (tahle
+      tabulka se čte jen přes dashboard/ad-hoc dotazy, ne vysokofrekvenčně,
+      takže by nemělo jít o velký objem).
 
 - [ ] **`BACKFILL_WEEKS` lze přepsat kýmkoliv s `roles/run.developer`**
       Nízké riziko, ale umožňuje neplánovaně zatáhnout až rok historie
-      (cost / abuse potential).
+      (cost / abuse potential — ve skutečnosti dnes bez efektu, viz
+      `README.md` sekce Backfill, ale `run.developer` držitel to neví a
+      riziko zůstává, kdyby se backfill v budoucnu stal funkčním).
+      **Fix:** zkontroluj, kdo všechno má `roles/run.developer` (nebo širší)
+      na `$GCP_PROJECT`:
+      ```bash
+      gcloud projects get-iam-policy $GCP_PROJECT \
+        --flatten="bindings[].members" \
+        --filter="bindings.role:roles/run.developer OR bindings.role:roles/run.admin OR bindings.role:roles/owner OR bindings.role:roles/editor" \
+        --format="table(bindings.role,bindings.members)"
+      ```
+      Odeber roli komukoliv, kdo `rankscale-extract` nepotřebuje ručně
+      spouštět/upravovat.
 
 - [ ] **Alerting pokrývá jen "failed execution", ne neúplná/chybějící data**
       Současný alert (Cloud Monitoring, `completed_execution_count{result="failed"}`)
