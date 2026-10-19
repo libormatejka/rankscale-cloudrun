@@ -290,10 +290,14 @@ def _warn_if_row_count_dropped(client: bigquery.Client, new_row_count: int) -> N
         return
 
     if prev_count and new_row_count < prev_count * (1 - ROW_COUNT_DROP_WARN_THRESHOLD):
+        # "ROW_COUNT_DROP_WARNING" je stabilní ASCII marker pro log-based
+        # alert (Cloud Monitoring, viz SECURITY_CHECKLIST.md) — nezávisí na
+        # diakritice/formátování zbytku hlášky, které se může časem změnit.
         log.warning(
-            f"topic_metrics_history: tento běh zapíše {new_row_count} řádků, "
-            f"předchozí běh měl {prev_count} (pokles > {ROW_COUNT_DROP_WARN_THRESHOLD:.0%}) "
-            f"— možná neúplná data z Rankscale API."
+            f"ROW_COUNT_DROP_WARNING topic_metrics_history: tento běh zapíše "
+            f"{new_row_count} řádků, předchozí běh měl {prev_count} "
+            f"(pokles > {ROW_COUNT_DROP_WARN_THRESHOLD:.0%}) — možná neúplná "
+            f"data z Rankscale API."
         )
 
 
