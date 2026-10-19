@@ -13,17 +13,20 @@
 
 -- ------------------------------------------------------------
 -- etl_runs
--- Metadata tabulka — jeden řádek per spuštění rankscale_extract_gcp.py,
--- ať už úspěšné nebo neúspěšné.
--- Zapisuje se přes log_run() v skriptu, vždy na konci běhu.
+-- Metadata tabulka — řádky per spuštění rankscale_extract_gcp.py.
+-- Každý run_id má nejdřív jeden "running" řádek (mark_run_started(), na
+-- začátku běhu, finished_at/brands_total/brands_failed/rows_written NULL),
+-- a na konci přesně jeden "success"/"failed" řádek (log_run()). "running"
+-- řádek bez navazujícího success/failed i po LOCK_STALE_AFTER_SECONDS ve
+-- skriptu znamená spadlou/zaseknutou exekuci (viz check_no_concurrent_run).
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `RankScaleDashboard.etl_runs`
 (
   run_id         STRING,     -- UUID, unikátní per spuštění
   started_at     TIMESTAMP,
-  finished_at    TIMESTAMP,
+  finished_at    TIMESTAMP,  -- NULL dokud běh neskončí (status = "running")
   mode           STRING,     -- "daily" | "backfill"
-  status         STRING,     -- "success" | "failed"
+  status         STRING,     -- "running" | "success" | "failed"
   brands_total   INT64,
   brands_failed  INT64,
   rows_written   INT64,      -- součet přes všechny tabulky v tomto běhu

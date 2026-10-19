@@ -434,12 +434,19 @@ konkurenti) — v Rankscale UI se nezobrazuje, při čtení případně vyfiltru
 - **Cloud Console → Cloud Run → Jobs → rankscale-extract → Executions** — historie běhů, exit kódy
 - **Cloud Logging** (`resource.type="cloud_run_job"`) — stdout/stderr ze skriptu
 - **Cloud Logging** (`resource.type="cloud_scheduler_job"`) — historie pokusů o spuštění, `status: {}` = úspěch, jinak obsahuje chybu
-- **BigQuery `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`** — jeden řádek per spuštění skriptu
-  (`started_at`, `finished_at`, `mode`, `status`, `brands_total`, `brands_failed`,
-  `rows_written`, `error_message`). Zapisuje se na konci každého běhu, ať dopadl
-  jakkoliv (viz `log_run()` v `src/rankscale_extract_gcp.py`). Rychlý přehled:
+- **BigQuery `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`** — **dva** řádky per
+  spuštění skriptu, stejný `run_id`: jeden `status = "running"` hned na
+  začátku (`mark_run_started()`, `finished_at`/`brands_total`/`brands_failed`/
+  `rows_written` zatím `NULL` — slouží i jako lock marker proti souběžnému
+  běhu, viz `check_no_concurrent_run()`), a jeden finální `"success"`/`"failed"`
+  na konci (`log_run()`, se stejnými hodnotami `started_at`/`run_id`).
+  `"running"` řádek bez navazujícího finálního řádku i déle než
+  `LOCK_STALE_AFTER_SECONDS` (30 min) znamená spadlou/zaseknutou exekuci.
+  Rychlý přehled (jen finální řádky, ne lock markery):
   ```sql
-  SELECT * FROM `RankScaleDashboard.etl_runs` ORDER BY started_at DESC LIMIT 20
+  SELECT * FROM `RankScaleDashboard.etl_runs`
+  WHERE status != 'running'
+  ORDER BY started_at DESC LIMIT 20
   ```
 - Neúspěšný brand (chyba API u některého z jeho topiců) se loguje, extract
   pokračuje na dalších brandech/topicech; pokud selhal **alespoň jeden**, celý

@@ -131,9 +131,11 @@ export SA_NAME=rankscale-extract-job
   ```
   a zkontrolovat v BQ:
   ```sql
-  SELECT * FROM `RankScaleDashboard.etl_runs` ORDER BY started_at DESC LIMIT 1
+  SELECT * FROM `RankScaleDashboard.etl_runs`
+  WHERE status != 'running' ORDER BY started_at DESC LIMIT 1
   ```
-  (`status = success`)
+  (`status = success`; každý běh zapisuje i dočasný `status = "running"`
+  řádek se stejným `run_id`, viz README sekce "Monitoring a logy")
 
 ## 7. Cloud Scheduler (denní spouštění)
 

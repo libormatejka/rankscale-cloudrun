@@ -43,6 +43,12 @@ TOPIC_METRICS_START_DATE = "2026-05-11"
 NOW    = datetime.now(UTC).isoformat()
 RUN_ID = str(uuid.uuid4())
 
+# Jak dlouho se "running" řádek v etl_runs ještě počítá jako aktivní běh
+# (viz check_no_concurrent_run) — bezpečný násobek --task-timeout=1200s
+# z README/DEPLOY_NEW_PROJECT.md, aby spadlý běh bez finished_at řádku
+# nezablokoval navždy budoucí spuštění.
+LOCK_STALE_AFTER_SECONDS = 1800
+
 # Souhrnná statistika běhu pro etl_runs (viz log_run) — bq_append do ní
 # přičítá počet zapsaných řádků napříč všemi tabulkami.
 run_stats = {"rows_written": 0}
@@ -88,6 +94,66 @@ def bq_append(
     log.info(f"    → {table.split('.')[-1]}: {len(rows)} řádků zapsáno")
 
 
+def check_no_concurrent_run(client: bigquery.Client) -> None:
+    """Advisory lock proti souběhu dvou exekucí (např. scheduler + ruční
+    `make execute` zrovna ve stejném okně) — bez něj by druhá exekuce mohla
+    přepsat topic_metrics_history (WRITE_TRUNCATE) nekompletním výsledkem.
+
+    Best-effort, ne garance: řádek "running" se zapisuje až PO téhle
+    kontrole (viz main()), takže dvě exekuce odstartované během pár sekund
+    od sebe se touto kontrolou neodchytí. Chrání spolehlivě proti běžnějšímu
+    případu — jedna exekuce už běží desítky sekund/minut, druhá se spustí
+    později.
+    """
+    query = f"""
+        SELECT run_id, started_at
+        FROM `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`
+        WHERE status = 'running'
+          AND run_id != @run_id
+          AND run_id NOT IN (
+            SELECT run_id FROM `{GCP_PROJECT}.{BQ_DATASET}.etl_runs`
+            WHERE status IN ('success', 'failed')
+          )
+    """
+    job_config = bigquery.QueryJobConfig(query_parameters=[
+        bigquery.ScalarQueryParameter("run_id", "STRING", RUN_ID),
+    ])
+    candidates = list(client.query(query, job_config=job_config).result())
+
+    now = datetime.now(UTC)
+    active = [
+        r for r in candidates
+        if (now - r["started_at"]).total_seconds() < LOCK_STALE_AFTER_SECONDS
+    ]
+    if active:
+        ids = ", ".join(r["run_id"] for r in active)
+        raise RuntimeError(
+            f"Jiný běh už je v procesu (run_id: {ids}) — končím, ať nedojde "
+            f"k souběžnému přepsání topic_metrics_history."
+        )
+
+
+def mark_run_started(client: bigquery.Client, started_at: str) -> None:
+    """Zapíše 'running' řádek do etl_runs hned na začátku běhu — slouží jako
+    lock marker pro check_no_concurrent_run() budoucích exekucí. finished_at
+    zůstává NULL, dokud log_run() nezapíše finální success/failed řádek se
+    stejným run_id."""
+    row = {
+        "run_id":        RUN_ID,
+        "started_at":    started_at,
+        "finished_at":   None,
+        "mode":          "backfill" if BACKFILL_WEEKS else "daily",
+        "status":        "running",
+        "brands_total":  None,
+        "brands_failed": None,
+        "rows_written":  None,
+        "error_message": None,
+    }
+    bq_append(client, f"{GCP_PROJECT}.{BQ_DATASET}.etl_runs", [row])
+    # Tenhle marker řádek se nepočítá do rows_written finálního řádku níže.
+    run_stats["rows_written"] = 0
+
+
 def log_run(
     client: bigquery.Client,
     started_at: str,
@@ -96,7 +162,9 @@ def log_run(
     brands_failed: int,
     error_message: str | None,
 ) -> None:
-    """Zapíše jeden souhrnný řádek běhu do {GCP_PROJECT}.{BQ_DATASET}.etl_runs.
+    """Zapíše finální (success/failed) souhrnný řádek běhu do
+    {GCP_PROJECT}.{BQ_DATASET}.etl_runs — doplňuje 'running' marker řádek
+    zapsaný mark_run_started() na začátku běhu se stejným run_id.
 
     Chyba při zápisu logu se jen zaloguje, nesmí shodit jinak úspěšný run —
     proto vlastní try/except (na rozdíl od ostatních bq_append volání).
@@ -270,6 +338,9 @@ def main() -> None:
     topics_by_brand: dict[str, list[tuple[str, str]]] = {}
 
     try:
+        check_no_concurrent_run(client)
+        mark_run_started(client, started_at)
+
         topics_by_brand = extract_brand_topics(client)
 
         failed_brands, errors = extract_topic_metrics_history(

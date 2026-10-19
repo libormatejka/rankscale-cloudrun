@@ -96,15 +96,20 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       **Fix:** v korporátním provozu rozdělit na least-privilege role
       (deployer / data steward / security admin) podle potřeby.
 
-- [ ] **Souběh dvou exekucí Cloud Run Jobu s `WRITE_TRUNCATE`**
+- [x] **Souběh dvou exekucí Cloud Run Jobu s `WRITE_TRUNCATE`**
       `maxRetries=1` + `taskCount=1` je OK pro jednu exekuci, ale nic nebrání
       dvěma *souběžným* exekucím (např. manuální `make execute`/`gcloud run
       jobs execute` zrovna když běží scheduler). Při `WRITE_TRUNCATE` na
       `topic_metrics_history` tak může dojít k přepsání kompletních dat
       nekompletním výsledkem, nebo k výsledku závislém na pořadí dokončení.
-      **Fix:** zvážit distribuovaný lock (např. BigQuery/Firestore row,
-      nebo Cloud Run jobs `--max-concurrent` ekvivalent), nebo aspoň
-      dokumentovat/zakázat souběžné manuální spouštění během scheduler okna.
+      **Fix (hotovo):** advisory lock přes BigQuery — `mark_run_started()`
+      zapíše na začátku běhu `status = "running"` řádek do `etl_runs`,
+      `check_no_concurrent_run()` před extraktem zkontroluje, že neběží
+      jiný `run_id` s `status = "running"` novější než
+      `LOCK_STALE_AFTER_SECONDS` (30 min). Best-effort (ne transakční
+      garance pro běhy odstartované během pár sekund od sebe), ale
+      spolehlivě kryje reálný scénář (scheduler + ruční spuštění s
+      odstupem desítek sekund/minut). Žádná nová GCP infrastruktura.
       (Nalezeno v externím review 2026-10.)
 
 - [ ] **Cloud Build používá defaultní Compute Engine SA sdílený s jinými workloady**
