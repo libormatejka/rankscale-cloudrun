@@ -96,6 +96,39 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       **Fix:** v korporátním provozu rozdělit na least-privilege role
       (deployer / data steward / security admin) podle potřeby.
 
+- [ ] **Souběh dvou exekucí Cloud Run Jobu s `WRITE_TRUNCATE`**
+      `maxRetries=1` + `taskCount=1` je OK pro jednu exekuci, ale nic nebrání
+      dvěma *souběžným* exekucím (např. manuální `make execute`/`gcloud run
+      jobs execute` zrovna když běží scheduler). Při `WRITE_TRUNCATE` na
+      `topic_metrics_history` tak může dojít k přepsání kompletních dat
+      nekompletním výsledkem, nebo k výsledku závislém na pořadí dokončení.
+      **Fix:** zvážit distribuovaný lock (např. BigQuery/Firestore row,
+      nebo Cloud Run jobs `--max-concurrent` ekvivalent), nebo aspoň
+      dokumentovat/zakázat souběžné manuální spouštění během scheduler okna.
+      (Nalezeno v externím review 2026-10.)
+
+- [ ] **Cloud Build používá defaultní Compute Engine SA sdílený s jinými workloady**
+      I po odebrání `roles/editor` (viz kritický nález výše) zůstává Cloud
+      Build na stejné identitě, kterou mohou v budoucnu používat i jiné
+      workloady v projektu (VM instance apod.) — spojuje odpovědnosti různých
+      funkcí do jedné identity.
+      **Fix:** dedikovaný build SA jen s oprávněním číst zdrojový kód, sestavit
+      image, zapisovat do konkrétního Artifact Registry repa a build logů
+      (případně i deploy, pokud půjde přes build pipeline).
+      (Nalezeno v externím review 2026-10.)
+
+- [ ] **Cloud Run Job a Cloud Scheduler sdílí jeden service account**
+      Stejný SA má zároveň BigQuery oprávnění (scheduler je nepotřebuje) i
+      `run.invoker` na úrovni projektu (runtime SA ho nepotřebuje vůbec).
+      Rozšiřuje to blast radius při kompromitaci kterékoli ze dvou rolí.
+      **Fix:** rozdělit na dvě identity:
+      - **Runtime SA**: `bigquery.jobUser` (projekt) + `bigquery.dataEditor`
+        (jen cílový dataset, viz nález výše) + `secretmanager.secretAccessor`
+        (jen konkrétní secret)
+      - **Scheduler SA**: `run.invoker` jen na konkrétním Cloud Run Jobu
+        (ne projekt, viz nález výše)
+      (Nalezeno v externím review 2026-10.)
+
 ---
 
 ## 🟡 Střední závažnost
@@ -104,6 +137,27 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       `FROM python:3.12-slim` — obsah image se může časem změnit. Artifact
       Registry vulnerability scanning není zapnutý.
       **Fix:** pin na `sha256:...` digest, zapnout Artifact Analysis scanning.
+
+- [ ] **Cloud Run Job je nasazený na tag `latest`, ne unikátní tag**
+      Cloud Run při deploymentu `latest` přeloží na konkrétní digest, takže
+      pozdější přepsání `latest` jiným image automaticky nezmění už nasazený
+      job — ale ztrácí se dohledatelnost verze a možnost snadného rollbacku.
+      **Fix:** tagovat image např. `image:2026-09-25` a zapnout immutable tags
+      v Artifact Registry, aby tagy nešly přepsat.
+      (Nalezeno v externím review 2026-10.)
+
+- [ ] **Chybí audit logging přístupu k Secret Manageru**
+      Neloguje se, kdo/kdy čte `rankscale-api-key`.
+      **Fix:** IAM & Admin → Audit Logs → zapnout Data Read pro Secret
+      Manager API.
+      (Nalezeno v externím review 2026-10.)
+
+- [ ] **Dvě verze secretu `api-key`, nejasné jestli je v1 ještě platná**
+      `:latest` ukazuje na verzi 2. Není ověřeno, jestli je verze 1 zneplatněná
+      i na straně Rankscale (riziko zombie credential).
+      **Fix:** ověřit u Rankscale, zda je starý klíč zrušený; pokud ne,
+      zrušit ho. Viz také `doc/API_KEY_ROTATION.md`.
+      (Nalezeno v externím review 2026-10.)
 
 - [ ] **Kontejner běží jako root**
       Dockerfile nenastavuje `USER`. Cloud Run má vlastní izolaci, ale je to
@@ -147,6 +201,32 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 - [ ] **`BACKFILL_WEEKS` lze přepsat kýmkoliv s `roles/run.developer`**
       Nízké riziko, ale umožňuje neplánovaně zatáhnout až rok historie
       (cost / abuse potential).
+
+- [ ] **Alerting pokrývá jen "failed execution", ne neúplná/chybějící data**
+      Současný alert (Cloud Monitoring, `completed_execution_count{result="failed"}`)
+      nezachytí: job se vůbec nespustí (scheduler fail), úspěšný běh s
+      neúplnými daty, neočekávaně nízký počet řádků, nebo abnormálně dlouhý běh.
+      **Fix:**
+      - `ALIGN_COUNT` → `ALIGN_SUM`, severity na `error`
+      - alert na chybějící execution (scheduler se nespustil)
+      - alert na timeout/retry
+      - row-count validace přímo ve skriptu (porovnání extrahovaného počtu
+        řádků vs. předchozí běh, log/alert při neočekávané odchylce)
+      - ověřit, že alert kanál reálně funguje — v logu jsou fail runy, přišlo
+        na ně oznámení?
+      (Nalezeno v externím review 2026-10.)
+
+---
+
+## ⚪ Otevřené otázky (ne technický nález, nutno rozhodnout)
+
+- [ ] Kdo bude zodpovědný za správu skriptu/deploymentu?
+- [ ] Kdo může upravovat skript a dělat redeploy?
+- [ ] Zůstane deployment manuální, nebo se zautomatizuje (CI/CD)?
+- [ ] Jak bude skript/pipeline reagovat na změnu struktury Rankscale API
+      (neočekávaně jiný tvar odpovědi)?
+- [ ] Kdo bude rotovat API klíč a podle jakého plánu?
+- [ ] Byl ověřen alertingový kanál reálným testem (ne jen konfigurací)?
 
 ---
 
