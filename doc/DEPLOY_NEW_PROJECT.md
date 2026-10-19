@@ -104,12 +104,14 @@ nemá důvod spouštět Cloud Run joby.
   bq query --project_id=$GCP_PROJECT --use_legacy_sql=false < src/schema_raw.sql
   ```
 - [ ] Dát runtime SA `bigquery.dataEditor` jen na tenhle dataset (ne na
-  celý projekt):
+  celý projekt) — přes legacy ACL (`bq add-iam-policy-binding` vyžaduje na
+  některých projektech allowlisting, viz README krok 3b):
   ```bash
-  bq add-iam-policy-binding \
-    --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
-    --role="roles/bigquery.dataEditor" \
-    ${GCP_PROJECT}:RankScaleDashboard
+  bq show --format=prettyjson ${GCP_PROJECT}:RankScaleDashboard \
+    | jq '{access: (.access + [{role: "WRITER", userByEmail: "'"${SA_NAME}"'@'"${GCP_PROJECT}"'.iam.gserviceaccount.com"}])}' \
+    > /tmp/dataset_access.json
+
+  bq update --source /tmp/dataset_access.json ${GCP_PROJECT}:RankScaleDashboard
   ```
 
 ## 5. `src/env.yaml`

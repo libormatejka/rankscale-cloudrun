@@ -237,14 +237,31 @@ bq query --project_id=$GCP_PROJECT --use_legacy_sql=false < src/schema_raw.sql
 ```
 
 Teď, když dataset existuje, dej runtime SA `bigquery.dataEditor` **jen na
-tenhle dataset** — ne na celý projekt (viz krok 2):
+tenhle dataset** — ne na celý projekt (viz krok 2). `bq
+add-iam-policy-binding` (IAM-style binding na dataset) vyžaduje na
+některých projektech allowlisting, který ne všude je — spolehlivější je
+legacy ACL cesta přes `bq update --source`, co funguje všude a dělá to
+samé (`WRITER` v ACL terminologii = `bigquery.dataEditor`). Příkaz níže
+přečte stávající ACL a jen k němu přidá nový řádek, nic nepřepíše:
 
 ```bash
-bq add-iam-policy-binding \
-  --member="serviceAccount:${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com" \
-  --role="roles/bigquery.dataEditor" \
-  ${GCP_PROJECT}:RankScaleDashboard
+bq show --format=prettyjson ${GCP_PROJECT}:RankScaleDashboard \
+  | jq '{access: (.access + [{role: "WRITER", userByEmail: "'"${SA_NAME}"'@'"${GCP_PROJECT}"'.iam.gserviceaccount.com"}])}' \
+  > /tmp/dataset_access.json
+
+bq update --source /tmp/dataset_access.json ${GCP_PROJECT}:RankScaleDashboard
 ```
+
+Ověř výsledek:
+
+```bash
+bq show --format=prettyjson ${GCP_PROJECT}:RankScaleDashboard | jq '.access'
+```
+
+Měl bys vidět nový záznam s `"role": "WRITER"` a `userByEmail` ukazujícím
+na `${SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com`, vedle původních
+`projectWriters`/`projectOwners`/`projectReaders` řádků (ty zůstanou
+nedotčené).
 
 `src/schema_raw.sql` nemá project ID natvrdo zapsané — `--project_id`
 určí, do kterého projektu se tabulky založí, takže při přesunu na jiný projekt
