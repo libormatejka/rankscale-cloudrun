@@ -130,6 +130,9 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       i IAM správu — single point of failure, no separation of duties.
       **Fix:** v korporátním provozu rozdělit na least-privilege role
       (deployer / data steward / security admin) podle potřeby.
+      **Rozhodnutí (2026-10-19): přijatelné riziko.** Jediný správce,
+      malý projekt — separace rolí by jen přidala komplexitu bez reálného
+      přínosu. Přehodnotit, pokud přibydou další lidé s přístupem.
 
 - [x] **Souběh dvou exekucí Cloud Run Jobu s `WRITE_TRUNCATE`**
       `maxRetries=1` + `taskCount=1` je OK pro jednu exekuci, ale nic nebrání
@@ -181,6 +184,11 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       defaultní Compute SA, ne tahle nová identita). Kvůli tomu tenhle krok
       zatím **není** zapojený do `Makefile`/README jako výchozí — je to
       opt-in hardening, ne součást základního postupu, dokud není ověřený.
+      **Rozhodnutí (2026-10-19): přijatelné riziko.** Defaultní Compute SA
+      už nemá `roles/editor` (kritický nález výše vyřešen) — zbývající
+      riziko je jen sdílení identity s případnými budoucími workloady,
+      ne aktivní zranitelnost. Přehodnotit, pokud v projektu přibydou další
+      Cloud Build pipeline/workloady na téhle SA.
       (Nalezeno v externím review 2026-10.)
 
 ---
@@ -232,11 +240,18 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       internetu (jen IAM autentizace, žádná síťová izolace).
       **Fix:** zvážit VPC-SC perimetr kolem BigQuery/Secret Manageru, pokud
       jde o citlivá data.
+      **Rozhodnutí (2026-10-19): přijatelné riziko.** Data (marketing/SEO
+      visibility metriky) nejsou citlivá/regulovaná v míře, co by
+      ospravedlnila síťový perimetr navíc k IAM. Přehodnotit, pokud se
+      charakter dat změní nebo přibude compliance požadavek.
 
 - [ ] **Šifrování jen Google-managed klíči (ne CMEK)**
       Artifact Registry, Secret Manager i BigQuery běží na defaultním
       Google-managed key.
       **Fix:** zvážit CMEK, pokud to vyžaduje compliance/regulace.
+      **Rozhodnutí (2026-10-19): přijatelné riziko.** Stejný důvod jako
+      VPC-SC výše — relevantní jen při konkrétním compliance požadavku,
+      který dnes není.
 
 - [x] **`raw_answer_texts` obsahuje syrové AI odpovědi bez klasifikace dat**
       *(neaplikovatelné — tabulka `raw_answer_texts` byla v rámci přechodu na
@@ -248,6 +263,10 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       access policy.
       **Fix:** rozhodnout, která pipeline je produkční, druhou buď vypnout,
       nebo jasně označit jako staging/test.
+      **Rozhodnutí (2026-10-19): přijatelné riziko zatím** — obě pipeline
+      dál běží paralelně (GCP varianta i produkční GitHub Actions). Nejde
+      o technický fix, ale o rozhodnutí, které zůstává otevřené; přehodnotit,
+      až/pokud se ukáže potřeba sjednotit zdroj pravdy.
 
 ---
 
@@ -288,25 +307,39 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       ```
       Odeber roli komukoliv, kdo `rankscale-extract` nepotřebuje ručně
       spouštět/upravovat.
+      **Rozhodnutí (2026-10-19): přijatelné riziko.** Audit příkaz výše
+      nebyl spuštěný/vyhodnocený naživo — přijato jako nízkoprioritní bez
+      ověření (jediný správce s přístupem k projektu dělá riziko malým i
+      bez kontroly). Pokud bys to chtěl ověřit, stačí spustit příkaz výše.
 
 - [ ] **Alerting pokrývá jen "failed execution", ne neúplná/chybějící data**
       Současný alert (Cloud Monitoring, `completed_execution_count{result="failed"}`)
       nezachytí: job se vůbec nespustí (scheduler fail), úspěšný běh s
       neúplnými daty, neočekávaně nízký počet řádků, nebo abnormálně dlouhý běh.
       **Fix:**
-      - `ALIGN_COUNT` → `ALIGN_SUM`, severity na `error` (GCP)
-      - alert na chybějící execution (scheduler se nespustil) (GCP)
-      - alert na timeout/retry (GCP)
-      - [x] row-count validace přímo ve skriptu (porovnání extrahovaného počtu
-        řádků vs. předchozí běh, log/alert při neočekávané odchylce) —
-        **hotovo**, `_warn_if_row_count_dropped()` v
+      - [x] row-count validace přímo ve skriptu + navázaný log-based alert —
+        **hotovo** (2026-10-19). `_warn_if_row_count_dropped()` v
         `src/rankscale_extract_gcp.py` porovná počet řádků, které se chystá
         zapsat `extract_topic_metrics_history()`, s počtem řádků, co jsou v
         `topic_metrics_history` teď (z předchozího běhu), a zaloguje
-        `WARNING` při poklesu > `ROW_COUNT_DROP_WARN_THRESHOLD` (30 %).
-        Zbývá navázat log-based alert na tenhle `WARNING` (GCP, viz níže).
-      - ověřit, že alert kanál reálně funguje — v logu jsou fail runy, přišlo
-        na ně oznámení? (proces/GCP)
+        `WARNING` s ASCII markerem `ROW_COUNT_DROP_WARNING` při poklesu >
+        `ROW_COUNT_DROP_WARN_THRESHOLD` (30 %). Cloud Monitoring alert
+        policy (`conditionMatchedLog` na `textPayload:"ROW_COUNT_DROP_WARNING"`,
+        `alertPolicies/11970488685546518399`) posílá e-mail na stejný
+        kanál jako existující failed-execution alert. Ověřeno nasazením +
+        ručním během.
+      - `ALIGN_COUNT` → `ALIGN_SUM`, severity na `error` (GCP)
+      - alert na chybějící execution (scheduler se nespustil) (GCP)
+      - alert na timeout/retry (GCP)
+      - ověřit, že alert kanál reálně funguje na failed-execution alertu —
+        v logu jsou fail runy, přišlo na ně oznámení? (proces/GCP)
+
+      **Rozhodnutí (2026-10-19) pro zbylé 3 body výše: přijatelné riziko.**
+      Nejdůležitější mezera (úspěšný běh s tichým poklesem dat) je
+      pokrytá. `ALIGN_SUM`/missing-execution/timeout alerty jsou jemnější
+      doladění s nižší pravděpodobností výskytu u jednou denně běžícího
+      jobu — přehodnotit, pokud se objeví konkrétní incident, který by to
+      bylo chytlo.
       (Nalezeno v externím review 2026-10.)
 
 ---
