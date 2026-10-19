@@ -452,6 +452,14 @@ konkurenti) — v Rankscale UI se nezobrazuje, při čtení případně vyfiltru
   pokračuje na dalších brandech/topicech; pokud selhal **alespoň jeden**, celý
   job skončí s `exit(1)` → execution je označená **Failed** a spustí
   e-mailový alert z kroku 8.
+- **Pokles počtu řádků** — `extract_topic_metrics_history()` před
+  přepsáním `topic_metrics_history` porovná, kolik řádků se chystá zapsat,
+  s tím, kolik jich tam je teď (z předchozího běhu). Při poklesu o víc než
+  30 % zaloguje `WARNING` do Cloud Loggingu (`resource.type="cloud_run_job"`)
+  — na rozdíl od `exit(1)` výše tohle **neshodí** execution, job dál skončí
+  jako success; je to jen signál pro případný budoucí log-based alert
+  (dnes na tenhle `WARNING` není navázané žádné upozornění, viz
+  `doc/SECURITY_CHECKLIST.md`).
 
 ## Smazání dat (truncate)
 

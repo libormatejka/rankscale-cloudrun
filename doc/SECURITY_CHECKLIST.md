@@ -196,9 +196,17 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 
 ## 🟢 Nízká / hygiena
 
-- [ ] **`max-retries=1` + `WRITE_APPEND` bez idempotency klíče**
+- [x] **`max-retries=1` + `WRITE_APPEND` bez idempotency klíče**
       Retry po částečném selhání může vytvořit duplicitní řádky (datová
       integrita / audit trail).
+      **Fix (hotovo):** `bq_append()` teď předává `load_table_from_file()`
+      deterministické `job_id` (`{RUN_ID}-{tabulka}-{pořadí}`) — pokud by se
+      tahle konkrétní load operace zopakovala se stejným ID, BigQuery vrátí
+      původní job místo založení druhého (doporučený BigQuery idempotency
+      pattern). Pozn.: retry celé Cloud Run Job exekuce (nový proces) má
+      vždy nový `RUN_ID`, takže se tím nededuplikují dvě *oddělené* exekuce —
+      to je očekávané, každá exekuce má v `etl_runs` svůj vlastní auditní
+      řádek.
 
 - [ ] **Cloud Audit Logs "Data Access" pro BigQuery pravděpodobně nejsou zapnuté**
       Defaultně vypnuté kvůli objemu logů — bez nich není vidět, kdo přesně
@@ -213,13 +221,19 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       nezachytí: job se vůbec nespustí (scheduler fail), úspěšný běh s
       neúplnými daty, neočekávaně nízký počet řádků, nebo abnormálně dlouhý běh.
       **Fix:**
-      - `ALIGN_COUNT` → `ALIGN_SUM`, severity na `error`
-      - alert na chybějící execution (scheduler se nespustil)
-      - alert na timeout/retry
-      - row-count validace přímo ve skriptu (porovnání extrahovaného počtu
-        řádků vs. předchozí běh, log/alert při neočekávané odchylce)
+      - `ALIGN_COUNT` → `ALIGN_SUM`, severity na `error` (GCP)
+      - alert na chybějící execution (scheduler se nespustil) (GCP)
+      - alert na timeout/retry (GCP)
+      - [x] row-count validace přímo ve skriptu (porovnání extrahovaného počtu
+        řádků vs. předchozí běh, log/alert při neočekávané odchylce) —
+        **hotovo**, `_warn_if_row_count_dropped()` v
+        `src/rankscale_extract_gcp.py` porovná počet řádků, které se chystá
+        zapsat `extract_topic_metrics_history()`, s počtem řádků, co jsou v
+        `topic_metrics_history` teď (z předchozího běhu), a zaloguje
+        `WARNING` při poklesu > `ROW_COUNT_DROP_WARN_THRESHOLD` (30 %).
+        Zbývá navázat log-based alert na tenhle `WARNING` (GCP, viz níže).
       - ověřit, že alert kanál reálně funguje — v logu jsou fail runy, přišlo
-        na ně oznámení?
+        na ně oznámení? (proces/GCP)
       (Nalezeno v externím review 2026-10.)
 
 ---

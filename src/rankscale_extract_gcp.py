@@ -17,6 +17,7 @@ ne jen nová data (viz doc/api/report.md).
 """
 
 import io
+import itertools
 import json
 import logging
 import os
@@ -40,6 +41,11 @@ RATE_SLEEP     = 0.5
 # až od poloviny května 2026, dřívější datum by jen vracelo prázdné řádky.
 TOPIC_METRICS_START_DATE = "2026-05-11"
 
+# Při poklesu počtu řádků topic_metrics_history oproti předchozímu běhu o víc
+# než tenhle podíl se zaloguje WARNING (viz _warn_if_row_count_dropped) — jen
+# log, žádný alerting kanál na něj dnes není navázaný (viz SECURITY_CHECKLIST.md).
+ROW_COUNT_DROP_WARN_THRESHOLD = 0.3
+
 NOW    = datetime.now(UTC).isoformat()
 RUN_ID = str(uuid.uuid4())
 
@@ -52,6 +58,11 @@ LOCK_STALE_AFTER_SECONDS = 1800
 # Souhrnná statistika běhu pro etl_runs (viz log_run) — bq_append do ní
 # přičítá počet zapsaných řádků napříč všemi tabulkami.
 run_stats = {"rows_written": 0}
+
+# Pořadové číslo pro deterministické BigQuery job_id (viz bq_append) — per
+# proces, ne per run_id samo o sobě, protože jeden run_id typicky zapisuje
+# do etl_runs dvakrát (mark_run_started + log_run) se stejnou tabulkou.
+_job_id_seq = itertools.count()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,10 +96,16 @@ def bq_append(
         source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
         autodetect=False,
     )
+    # Deterministický job_id (doporučený BigQuery idempotency pattern) —
+    # pokud by tahle load operace byla kdy zopakovaná se stejným ID (např.
+    # retry na úrovni knihovny/transportu), BigQuery vrátí původní job
+    # místo vytvoření druhého, takže nevzniknou duplicitní řádky.
+    job_id = f"{RUN_ID}-{table.split('.')[-1]}-{next(_job_id_seq)}"
     client.load_table_from_file(
         io.BytesIO(ndjson.encode()),
         table,
         job_config=cfg,
+        job_id=job_id,
     ).result()
     run_stats["rows_written"] += len(rows)
     log.info(f"    → {table.split('.')[-1]}: {len(rows)} řádků zapsáno")
@@ -257,6 +274,29 @@ def _topic_metric_rows(
     ]
 
 
+def _warn_if_row_count_dropped(client: bigquery.Client, new_row_count: int) -> None:
+    """Porovná new_row_count (co se za chvíli zapíše do topic_metrics_history)
+    s počtem řádků, které tam jsou TEĎ (tj. z předchozího běhu, než ho tahle
+    exekuce přepíše přes WRITE_TRUNCATE). Jen loguje WARNING při výrazném
+    poklesu — nic neblokuje a nemění exit kód, protože nejde vyloučit platné
+    důvody (např. zrušený topic v Rankscale); slouží jako signál pro
+    budoucí log-based alert, ne jako hard-fail podmínka."""
+    try:
+        prev_count = next(iter(client.query(
+            f"SELECT COUNT(*) AS n FROM `{GCP_PROJECT}.{BQ_DATASET}.topic_metrics_history`"
+        ).result()))["n"]
+    except Exception as e:
+        log.warning(f"Nepodařilo se ověřit předchozí počet řádků topic_metrics_history: {e}")
+        return
+
+    if prev_count and new_row_count < prev_count * (1 - ROW_COUNT_DROP_WARN_THRESHOLD):
+        log.warning(
+            f"topic_metrics_history: tento běh zapíše {new_row_count} řádků, "
+            f"předchozí běh měl {prev_count} (pokles > {ROW_COUNT_DROP_WARN_THRESHOLD:.0%}) "
+            f"— možná neúplná data z Rankscale API."
+        )
+
+
 def extract_topic_metrics_history(
     client: bigquery.Client,
     topics_by_brand: dict[str, list[tuple[str, str]]],
@@ -315,6 +355,8 @@ def extract_topic_metrics_history(
 
         if brand_failed:
             failed_brands.append(brand_id)
+
+    _warn_if_row_count_dropped(client, len(rows))
 
     bq_append(
         client,
