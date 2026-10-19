@@ -91,11 +91,17 @@ s ním nic nesynchronizuje ani neřeší.
       jediné místo, které se odsud spravuje/rotuje. Co se děje v
       `libor-matejkacz`, řeší (pokud vůbec) ten druhý repozitář samostatně.
 
-- [ ] **API klíč byl opakovaně vypsán do terminálu v čistém textu během ladění**
+- [x] **API klíč byl opakovaně vypsán do terminálu v čistém textu během ladění**
       (`gcloud secrets versions access latest`) — prošel Cloud Shell
       scrollbackem a shell historií.
-      **Fix:** rotovat Rankscale API klíč (starý zneplatnit, nový uložit do
-      Secret Manageru), spustit `history -c` v Cloud Shellu.
+      **Hotovo (2026-10-19):** starý klíč revokován na Rankscale, nový
+      vygenerován a uložen do `rankscale-api-key` (verze 3, bez vypsání
+      hodnoty — ověřeno přes `wc -c`/HTTP status, ne čtením hodnoty).
+      Verze 1 a 2 (staré) `disabled`. Ověřeno ruční exekucí
+      (`rankscale-extract-gf9r6`, `Execution completed successfully in
+      42.3s`) — produkce běží s novým klíčem. Doporučuju ještě spustit
+      `history -c` v Cloud Shellu, pokud jsi starou hodnotu klíče zadával
+      přímo (ne přes soubor), ať nezůstane v shell historii.
 
       **Jak příště ladit secrets bez toho, aby se vypsaly na obrazovku:**
       - Funguje/nefunguje → test proti API, ne výpis hodnoty:
@@ -357,9 +363,13 @@ s ním nic nesynchronizuje ani neřeší.
 
 ---
 
-## Priorita (top 3)
+## Priorita (top 3) — všechny hotové
 
-1. SQL injection (#1) — čistá, bezriziková oprava v kódu
-2. Editor role na default Compute SA (#2) — odebrat, nic dalšího nezávisí
-3. Vystavený API klíč — rotovat (duplicita napříč projekty vyřešena
-   rozsahem, `libor-matejkacz` je mimo scope, viz výše)
+1. ✅ SQL injection (#1) — opraveno
+2. ✅ Editor role na default Compute SA (#2) — odebráno
+3. ✅ Vystavený API klíč — rotován 2026-10-19 (duplicita napříč projekty
+   vyřešena rozsahem, `libor-matejkacz` je mimo scope, viz výše)
+
+Všechny 🔴/🟠/🟡/🟢 nálezy jsou teď buď opravené, nebo vědomě přijaté jako
+riziko s datem a důvodem (viz jednotlivé položky výše). Otevřené zůstávají
+jen ⚪ organizační otázky, které nejdou vyřešit technickým fixem.
