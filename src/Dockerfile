@@ -9,4 +9,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY rankscale_extract_gcp.py .
 
+# Non-root — script only reads its own files and talks to GCP APIs over
+# HTTPS, no write access to /app needed at runtime. Home dir kept (not
+# --no-create-home) so local ADC testing can still mount gcloud config
+# into it — Docker sets $HOME from this user's /etc/passwd entry.
+RUN useradd --create-home --shell /usr/sbin/nologin appuser
+USER appuser
+
 ENTRYPOINT ["python", "rankscale_extract_gcp.py"]

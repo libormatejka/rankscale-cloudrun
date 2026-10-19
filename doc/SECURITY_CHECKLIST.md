@@ -133,10 +133,11 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 
 ## 🟡 Střední závažnost
 
-- [ ] **Image bez pinnutí na digest, bez vulnerability scanningu**
-      `FROM python:3.12-slim` — obsah image se může časem změnit. Artifact
-      Registry vulnerability scanning není zapnutý.
-      **Fix:** pin na `sha256:...` digest, zapnout Artifact Analysis scanning.
+- [x] **Image bez pinnutí na digest** — `src/Dockerfile` už používá
+      `FROM python:3.12-slim@sha256:...`. Zbývá jen vulnerability scanning
+      (GCP strana):
+      **Fix:** zapnout Artifact Analysis / Artifact Registry vulnerability
+      scanning pro repo s touto image (`gcloud artifacts` / Cloud Console).
 
 - [ ] **Cloud Run Job je nasazený na tag `latest`, ne unikátní tag**
       Cloud Run při deploymentu `latest` přeloží na konkrétní digest, takže
@@ -159,10 +160,10 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       zrušit ho. Viz také `doc/API_KEY_ROTATION.md`.
       (Nalezeno v externím review 2026-10.)
 
-- [ ] **Kontejner běží jako root**
-      Dockerfile nenastavuje `USER`. Cloud Run má vlastní izolaci, ale je to
-      zbytečně široký attack surface.
-      **Fix:** přidat non-root `USER` do Dockerfile.
+- [x] **Kontejner běží jako root**
+      `src/Dockerfile` nyní vytváří `appuser` (`useradd --create-home`) a
+      spouští entrypoint přes `USER appuser`. Lokální ADC test (`make run`)
+      upraven na mount do `/home/appuser/.config/gcloud` (dřív `/root/...`).
 
 - [ ] **Bez VPC Service Controls / síťového perimetru**
       BigQuery, Secret Manager i Cloud Run API jsou dostupné z veřejného

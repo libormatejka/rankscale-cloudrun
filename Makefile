@@ -26,7 +26,7 @@ run: build ## Spustí lokálně sestavený image (potřebuje ADC + RANKSCALE_API
 		-e RANKSCALE_API_KEY \
 		-e GCP_PROJECT \
 		-e BQ_DATASET \
-		-v ~/.config/gcloud:/root/.config/gcloud:ro \
+		-v ~/.config/gcloud:/home/appuser/.config/gcloud:ro \
 		rankscale-extract-local
 
 check-env:

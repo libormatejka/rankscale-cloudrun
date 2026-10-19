@@ -496,12 +496,12 @@ docker run --rm \
   -e RANKSCALE_API_KEY=rk_tvuj_klic \
   -e GCP_PROJECT=rankscale \
   -e BQ_DATASET=RankScaleDashboard \
-  -v ~/.config/gcloud:/root/.config/gcloud:ro \
+  -v ~/.config/gcloud:/home/appuser/.config/gcloud:ro \
   rankscale-extract-local
 ```
 
 Zkratka (stejné proměnné, ale čtené ze shellu): `RANKSCALE_API_KEY=rk_tvuj_klic GCP_PROJECT=rankscale BQ_DATASET=RankScaleDashboard make run`.
 
-(Mount `~/.config/gcloud` funguje jen pokud máš lokálně `gcloud auth application-default login`
-a image běží jako root — pro rychlý lokální test stačí, pro produkci se auth řeší
-přes service account Cloud Run Jobu, viz výše.)
+(Mount `~/.config/gcloud` funguje jen pokud máš lokálně `gcloud auth application-default login`.
+Image běží jako non-root `appuser` s domovským adresářem `/home/appuser` — proto mount cílí
+tam, ne na `/root/...`. Pro produkci se auth řeší přes service account Cloud Run Jobu, viz výše.)
