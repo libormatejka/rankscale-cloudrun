@@ -308,14 +308,13 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       to je očekávané, každá exekuce má v `etl_runs` svůj vlastní auditní
       řádek.
 
-- [ ] **Cloud Audit Logs "Data Access" pro BigQuery pravděpodobně nejsou zapnuté**
-      Defaultně vypnuté kvůli objemu logů — bez nich není vidět, kdo přesně
-      četl jaká data.
-      **Fix:** Console-only, stejně jako Secret Manager audit logy výše —
-      IAM & Admin → Audit Logs → najít "BigQuery API" → zaškrtnout
-      **Data Read** → Save. Zváž objem/cenu logů před zapnutím (tahle
-      tabulka se čte jen přes dashboard/ad-hoc dotazy, ne vysokofrekvenčně,
-      takže by nemělo jít o velký objem).
+- [x] **Cloud Audit Logs "Data Access" pro BigQuery pravděpodobně nejsou zapnuté**
+      *(neaplikovatelné — ověřeno v IAM & Admin → Audit Logs, "BigQuery API"
+      se v konfigurovatelném seznamu vůbec nenabízí.)* Google píše BigQuery
+      Data Access audit logy (Data Read) natvrdo ve výchozím stavu u
+      všech projektů a nejdou přes tenhle toggle vypnout ani zapnout — na
+      rozdíl od většiny ostatních API (vč. Secret Manageru), kde je to
+      opt-in. Není tedy co dělat, je to už defaultně pokryté.
 
 - [ ] **`BACKFILL_WEEKS` lze přepsat kýmkoliv s `roles/run.developer`**
       Nízké riziko, ale umožňuje neplánovaně zatáhnout až rok historie
