@@ -3,9 +3,11 @@
 Nálezy z bezpečnostního review nasazení `rankscale-extract` (Cloud Run Job,
 projekt `rankscale`). Řazeno podle závažnosti. Odškrtávej, jak se řeší.
 
-Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
-(`libor-matejkacz.RankScaleDashboard`, produkce) a tento Cloud Run Job
-(`rankscale.RankScaleDashboard`, GCP varianta).
+**`rankscale` (tento repozitář) je produkční pipeline.** Dřívější verze
+tohoto checklistu zmiňovala paralelní GitHub Actions pipeline v projektu
+`libor-matejkacz` jako "produkci" — to už neplatí (rozhodnutí 2026-10-19).
+`libor-matejkacz` je mimo scope tohoto repozitáře a dál se v souvislosti
+s ním nic nesynchronizuje ani neřeší.
 
 ---
 
@@ -81,12 +83,13 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       `secretAccessor` na secretu. Scheduler SA: nic na úrovni projektu
       (`run.invoker` scoped na job, taky mimo tenhle výpis).
 
-- [ ] **Duplicitní Rankscale API klíč napříč `libor-matejkacz` a `rankscale`**
-      Stejná hodnota klíče leží ve dvou nezávislých Secret Manager instancích —
-      dvě místa k rotaci, dvě místa možného úniku, riziko zombie credential po
-      rotaci jen v jednom projektu.
-      **Fix:** rozhodnout o jednom zdroji pravdy, nebo mít proces, který rotuje
-      oba současně.
+- [x] **Duplicitní Rankscale API klíč napříč `libor-matejkacz` a `rankscale`**
+      Stejná hodnota klíče ležela ve dvou nezávislých Secret Manager
+      instancích — dvě místa k rotaci, dvě místa možného úniku.
+      **Rozhodnutí (2026-10-19): vyřešeno rozsahem.** `libor-matejkacz` je
+      mimo scope tohoto repozitáře — `rankscale` je produkční pipeline a
+      jediné místo, které se odsud spravuje/rotuje. Co se děje v
+      `libor-matejkacz`, řeší (pokud vůbec) ten druhý repozitář samostatně.
 
 - [ ] **API klíč byl opakovaně vypsán do terminálu v čistém textu během ladění**
       (`gcloud secrets versions access latest`) — prošel Cloud Shell
@@ -257,16 +260,14 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
       *(neaplikovatelné — tabulka `raw_answer_texts` byla v rámci přechodu na
       `topic_metrics_history` smazaná i s daty, viz README.)*
 
-- [ ] **Dvě nezávislé kopie stejného datasetu bez jasného vlastnictví**
+- [x] **Dvě nezávislé kopie stejného datasetu bez jasného vlastnictví**
       GitHub Actions → `libor-matejkacz`, Cloud Run Job → `rankscale`. Bez
-      definovaného "zdroje pravdy" roste riziko rozjetí dat a nekonzistentní
-      access policy.
-      **Fix:** rozhodnout, která pipeline je produkční, druhou buď vypnout,
-      nebo jasně označit jako staging/test.
-      **Rozhodnutí (2026-10-19): přijatelné riziko zatím** — obě pipeline
-      dál běží paralelně (GCP varianta i produkční GitHub Actions). Nejde
-      o technický fix, ale o rozhodnutí, které zůstává otevřené; přehodnotit,
-      až/pokud se ukáže potřeba sjednotit zdroj pravdy.
+      definovaného "zdroje pravdy" rostlo riziko rozjetí dat a
+      nekonzistentní access policy.
+      **Rozhodnutí (2026-10-19): vyřešeno.** `rankscale` (tento repozitář)
+      je produkční pipeline. `libor-matejkacz` je mimo scope tohoto repa —
+      co se s ním děje (vypnutí, staging označení, cokoliv), je mimo tenhle
+      checklist.
 
 ---
 
@@ -360,4 +361,5 @@ Kontext: dvě nezávislé pipeline běží paralelně — GitHub Actions
 
 1. SQL injection (#1) — čistá, bezriziková oprava v kódu
 2. Editor role na default Compute SA (#2) — odebrat, nic dalšího nezávisí
-3. Duplicitní + vystavený API klíč (#4, #5) — rotovat
+3. Vystavený API klíč — rotovat (duplicita napříč projekty vyřešena
+   rozsahem, `libor-matejkacz` je mimo scope, viz výše)
