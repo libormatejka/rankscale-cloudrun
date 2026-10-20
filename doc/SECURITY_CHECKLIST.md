@@ -353,13 +353,32 @@ s ním nic nesynchronizuje ani neřeší.
 
 ## ⚪ Otevřené otázky (ne technický nález, nutno rozhodnout)
 
-- [ ] Kdo bude zodpovědný za správu skriptu/deploymentu?
-- [ ] Kdo může upravovat skript a dělat redeploy?
-- [ ] Zůstane deployment manuální, nebo se zautomatizuje (CI/CD)?
-- [ ] Jak bude skript/pipeline reagovat na změnu struktury Rankscale API
-      (neočekávaně jiný tvar odpovědi)?
-- [ ] Kdo bude rotovat API klíč a podle jakého plánu?
-- [ ] Byl ověřen alertingový kanál reálným testem (ne jen konfigurací)?
+- [x] **Kdo bude zodpovědný za správu skriptu/deploymentu? Kdo může
+      upravovat skript a dělat redeploy?** (2026-10-19) Jen Libor —
+      jediný správce, jediný s přístupem k oběma projektům (viz přijaté
+      riziko u `roles/owner` výše).
+- [x] **Zůstane deployment manuální, nebo se zautomatizuje (CI/CD)?**
+      (2026-10-20) Nedorozumění ujasněno — **denní *spouštění* skriptu už
+      je automatické** přes Cloud Scheduler (`rankscale-extract-daily`,
+      `30 6 * * *` UTC, `state: ENABLED`), ověřeno živě (execution
+      `rankscale-extract-268zr` naběhla přesně v 6:30 UTC a doběhla
+      úspěšně). *Deployment* (build+push nové image po změně kódu) zůstává
+      manuální přes `make deploy` — to se neautomatizuje, žádný CI/CD
+      trigger na push/merge se zatím nezakládá.
+- [x] Jak bude skript/pipeline reagovat na změnu struktury Rankscale API
+      (neočekávaně jiný tvar odpovědi)? **Rozhodnuto (2026-10-19):**
+      zůstává dnešní chování — spadne na výjimce, brand se označí jako
+      failed, `log_run()` zapíše chybu do `etl_runs`, e-mailový alert
+      upozorní. Žádná defenzivnější parsovací logika se nepřidává.
+- [x] **Kdo bude rotovat API klíč a podle jakého plánu?** (2026-10-20)
+      Libor, ad-hoc — žádný pevný interval, rotuje se jen při konkrétním
+      důvodu (podezření na únik, jako 2026-10-19, nebo požadavek ze strany
+      Rankscale).
+- [x] **Byl ověřen alertingový kanál reálným testem?** (2026-10-20)
+      Rozhodnutí: ne naostro — konfigurace (notification channel +
+      policy navázaná na správnou metriku/log filter) je důvěryhodná bez
+      umělého shození runu. Row-count alert byl nepřímo ověřen nasazením
+      a úspěšným během; failed-execution alert zůstává neotestovaný naživo.
 
 ---
 
